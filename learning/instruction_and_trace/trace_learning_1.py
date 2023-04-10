@@ -169,6 +169,8 @@ def test_trace_construct_1():
             "  l1, l2 = sch.get_loops(block=b0)",
         )
     )
+    print(trace.get_decision(trace.insts[0]))
+    print(trace.get_decision(trace.insts[1]))
     assert len(trace.insts) == 2
     assert len(trace.decisions) == 0
 
@@ -355,7 +357,6 @@ def _test_apply_annotation_trace_from_json(annotation: str):
         decisions={},
     )
     json_obj = trace.as_json()
-    print(json_obj)
     sch = tir.Schedule(elementwise, debug_mask="all")
     Trace.apply_json_to_schedule(json_obj, sch)
 
@@ -391,5 +392,5 @@ def test_apply_annotation_from_json():
     _test_apply_annotation_trace_from_json('"')
 
 
-if __name__ == "__main__":
-    test_apply_annotation_from_json()
+if __name__=="__main__":
+    test_trace_construct_1()

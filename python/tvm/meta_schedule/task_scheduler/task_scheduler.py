@@ -34,7 +34,7 @@ from ..measure_callback import MeasureCallback
 from ..runner import Runner, RunnerResult
 from ..search_strategy import MeasureCandidate
 from ..tune_context import TuneContext
-
+from ..utils import derived_object
 logger = get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -51,6 +51,7 @@ class TaskRecord(Object):
     measure_candidates: List[MeasureCandidate]
     builder_results: List[BuilderResult]
     runner_results: List[RunnerResult]
+
 
 
 @register_object("meta_schedule.TaskScheduler")
@@ -143,6 +144,7 @@ class TaskScheduler(Object):
             cost_model,
         )
 
+
     def terminate_task(self, task_id: int) -> None:
         """Terminate the task
 
@@ -167,9 +169,81 @@ class TaskScheduler(Object):
         """Print out a human-readable format of the tuning statistics."""
         return _ffi_api.TaskSchedulerPrintTuningStatistics(self)  # type: ignore # pylint: disable=no-member
 
+    def get_logger(self):
+        return _ffi_api.GetLogger(self)  # type: ignore # pylint: disable=no-member
+
+    def get_taskrecord(self):
+        return _ffi_api.GetTaskRecord(self)
+    
+    def get_measurecallbacks(self):
+        return _ffi_api.GetMeasureCallbacks(self)
+    
+    def get_database(self):
+        return _ffi_api.GetDatabase(self)
+    
+    def get_costmodel(self):
+        return _ffi_api.GetCostModel(self)
+    
+    def get_remainingtasks(self):
+        return _ffi_api.GetRemainingTasks(self)
+    
+    def tune_designspace(
+        self,
+        tasks: List[TuneContext],
+        task_weights: List[float],
+        max_trials_global: int,
+        max_trials_per_task: int,
+        num_trials_per_iter: int,
+        builder: Builder,
+        runner: Runner,
+        measure_callbacks: List[MeasureCallback],
+        database: Optional[Database],
+        cost_model: Optional[CostModel],
+    ) -> None:
+        """Auto-tuning for Get Design Space.
+
+        Parameters
+        ----------
+        tasks : List[TuneContext]
+            The list of tuning contexts as tasks.
+        task_weights : List[float]
+            The list of task weights.
+        max_trials_global : int
+            The maximum number of trials globally.
+        max_trials_per_task : int
+            The maximum number of trials per task.
+        num_trials_per_iter : int
+            The number of trials per iteration.
+        builder : Builder
+            The builder.
+        runner : Runner
+            The runner.
+        measure_callbacks : List[MeasureCallback]
+            The list of measure callbacks.
+        database : Optional[Database]
+            The database.
+        cost_model : Optional[CostModel]
+            The cost model.
+        """
+        task_weights = [float(w) for w in task_weights]
+        return _ffi_api.TaskSchedulerTuneDesignSpace(  # type: ignore # pylint: disable=no-member
+            self,
+            tasks,
+            task_weights,
+            max_trials_global,
+            max_trials_per_task,
+            num_trials_per_iter,
+            builder,
+            runner,
+            measure_callbacks,
+            database,
+            cost_model,
+        )
+
+    
     @staticmethod
     def create(  # pylint: disable=keyword-arg-before-vararg
-        kind: Literal["round-robin", "gradient"] = "gradient",
+        kind: Literal["round-robin", "gradient", "allpython"] = "gradient",
         *args,
         **kwargs,
     ) -> "TaskScheduler":
@@ -177,13 +251,17 @@ class TaskScheduler(Object):
         from . import (  # pylint: disable=import-outside-toplevel
             GradientBased,
             RoundRobin,
+            AllPythonBased,
         )
 
         if kind == "round-robin":
             return RoundRobin(*args, **kwargs)  # type: ignore
-        if kind == "gradient":
+        elif kind == "gradient":
             return GradientBased(*args, **kwargs)
-        raise ValueError(f"Unknown TaskScheduler name: {kind}")
+        elif kind == "allpython":
+            return AllPythonBased(*args, **kwargs)
+        else:
+            raise ValueError(f"Unknown TaskScheduler name: {kind}")
 
 
 create = TaskScheduler.create  # pylint: disable=invalid-name
@@ -215,6 +293,8 @@ class _PyTaskScheduler(TaskScheduler):
         )
 
 
+
+
 class PyTaskScheduler:
     """
     An abstract task scheduler with customized methods on the python-side.
@@ -238,6 +318,7 @@ class PyTaskScheduler:
         task_weights: List[float],
         max_trials_global: int,
         max_trials_per_task: int,
+        num_trials_per_iter: int,
         builder: Builder,
         runner: Runner,
         measure_callbacks: List[MeasureCallback],
@@ -252,6 +333,7 @@ class PyTaskScheduler:
             task_weights,
             max_trials_global,
             max_trials_per_task,
+            num_trials_per_iter,
             builder,
             runner,
             measure_callbacks,
@@ -279,3 +361,5 @@ class PyTaskScheduler:
         """
         # Using self._outer to replace the self pointer
         return _ffi_api.TaskSchedulerJoinRunningTask(self._outer(), task_id)  # type: ignore # pylint: disable=no-member
+
+

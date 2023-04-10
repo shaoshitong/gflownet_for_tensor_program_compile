@@ -140,6 +140,72 @@ void TaskCleanUp(TaskRecordNode* self, int task_id, const Array<RunnerResult>& r
   self->runner_futures = NullOpt;
 }
 
+
+PackedFunc TaskSchedulerNode::GetLogger() const{
+      return this->logger;
+};
+
+Array<TaskRecord> TaskSchedulerNode::GetTaskRecord() const{
+      return this->tasks_;
+};
+
+Array<MeasureCallback> TaskSchedulerNode::GetMeasureCallbacks() const{
+    return this->measure_callbacks_;
+};
+
+Optional<Database> TaskSchedulerNode::GetDatabase() const{
+    return this->database_;
+};
+
+Optional<CostModel> TaskSchedulerNode::GetCostModel() const{
+    return this->cost_model_;
+};
+
+int TaskSchedulerNode::GetRemainingTasks() const{
+    return this->remaining_tasks_;
+};
+
+Array<Array<tir::Schedule>> TaskSchedulerNode::Tune_DesignSpace(Array<TuneContext> ctxs, Array<FloatImm> task_weights,
+                             int max_trials_global, int max_trials_per_task,
+                             int num_trials_per_iter, Builder builder, Runner runner,
+                             Array<MeasureCallback> measure_callbacks, Optional<Database> database,
+                             Optional<CostModel> cost_model) {
+  CHECK_EQ(ctxs.size(), task_weights.size()) << "ValueError: `task_weights` must have the same "
+                                                "length as `ctxs`";
+  int n_tasks = this->remaining_tasks_ = ctxs.size();
+  this->measure_callbacks_ = measure_callbacks;
+  this->database_ = database;
+  this->cost_model_ = cost_model;
+  this->tasks_.clear();
+  this->tasks_.reserve(n_tasks);
+  Array<Array<tir::Schedule>> design_spaces_list;
+  for (int i = 0; i < n_tasks; ++i) {
+    const TuneContext& ctx = ctxs[i];
+    double weight = task_weights[i]->value;
+    TVM_PY_LOG(INFO, this->logger) << "Initializing Task #" << i << ": " << ctx->task_name;
+    TVM_PY_LOG(INFO, ctx->logger) << "Initializing Task #" << i << ": " << ctx->task_name;
+    this->tasks_.push_back(TaskRecord(ctx, weight));
+    Array<tir::Schedule> design_spaces =
+        ctx->space_generator.value()->GenerateDesignSpace(ctx->mod.value());
+    TVM_PY_LOG(INFO, ctx->logger) << "Total " << design_spaces.size()
+                                  << " design space(s) generated";
+    for (int i = 0, n = design_spaces.size(); i < n; ++i) {
+      tir::Schedule sch = design_spaces[i];
+      tir::Trace trace = sch->trace().value();
+      trace = trace->Simplified(true);
+      TVM_PY_LOG(INFO, ctx->logger) << "Design space #" << i << ":\n"
+                                    << sch->mod() << "\n"
+                                    << Concat(trace->AsPython(false), "\n");
+    }
+    ctx->search_strategy.value()->PreTuning(max_trials_per_task, num_trials_per_iter, design_spaces,
+                                            database, cost_model);
+    design_spaces_list.push_back(design_spaces);
+  }
+
+  return design_spaces_list;
+}
+
+
 void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weights,
                              int max_trials_global, int max_trials_per_task,
                              int num_trials_per_iter, Builder builder, Runner runner,
@@ -361,11 +427,15 @@ void PyTaskSchedulerNode::Tune(Array<TuneContext> tasks, Array<FloatImm> task_we
   }
 }
 
+
 TVM_REGISTER_NODE_TYPE(TaskRecordNode);
 TVM_REGISTER_OBJECT_TYPE(TaskSchedulerNode);
 TVM_REGISTER_NODE_TYPE(PyTaskSchedulerNode);
+
 TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerPyTaskScheduler")
     .set_body_typed(TaskScheduler::PyTaskScheduler);
+TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerTuneDesignSpace")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::Tune_DesignSpace);
 TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerTune")
     .set_body_method<TaskScheduler>(&TaskSchedulerNode::Tune);
 TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerJoinRunningTask")
@@ -378,6 +448,17 @@ TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerTouchTask")
     .set_body_method<TaskScheduler>(&TaskSchedulerNode::TouchTask);
 TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerPrintTuningStatistics")
     .set_body_method<TaskScheduler>(&TaskSchedulerNode::PrintTuningStatistics);
-
+TVM_REGISTER_GLOBAL("meta_schedule.GetLogger")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetLogger);
+TVM_REGISTER_GLOBAL("meta_schedule.GetTaskRecord")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetTaskRecord);
+TVM_REGISTER_GLOBAL("meta_schedule.GetMeasureCallbacks")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetMeasureCallbacks);
+TVM_REGISTER_GLOBAL("meta_schedule.GetDatabase")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetDatabase);
+TVM_REGISTER_GLOBAL("meta_schedule.GetCostModel")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetCostModel);
+TVM_REGISTER_GLOBAL("meta_schedule.GetRemainingTasks")
+    .set_body_method<TaskScheduler>(&TaskSchedulerNode::GetRemainingTasks);
 }  // namespace meta_schedule
 }  // namespace tvm

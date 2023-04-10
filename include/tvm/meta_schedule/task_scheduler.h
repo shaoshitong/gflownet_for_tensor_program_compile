@@ -186,6 +186,32 @@ class TaskSchedulerNode : public runtime::Object {
                     Array<MeasureCallback> measure_callbacks,  //
                     Optional<Database> database,               //
                     Optional<CostModel> cost_model);
+  
+
+  /*!
+   * \brief Jointly tune a given list of tasks and only return the design space
+   * \param tasks The tasks to be tuned
+   * \param task_weights The weight of each task
+   * \param max_trials_global The maximum number of trials to be performed globally
+   * \param max_trials_per_task The maximum number of trials to be performed for each task
+   * \param num_trials_per_iter The number of trials to be performed in each iteration
+   * \param builder The MetaSchedule builder
+   * \param runner The MetaSchedule runner
+   * \param measure_callbacks The callbacks to be called after each measurement
+   * \param database The database used in tuning
+   * \param cost_model The cost model used in tuning
+   */
+  virtual Array<Array<tir::Schedule>> Tune_DesignSpace(Array<TuneContext> tasks,                  //
+            Array<FloatImm> task_weights,              //
+            int max_trials_global,                     //
+            int max_trials_per_task,                   //
+            int num_trials_per_iter,                   //
+            Builder builder,                           //
+            Runner runner,                             //
+            Array<MeasureCallback> measure_callbacks,  //
+            Optional<Database> database,               //
+            Optional<CostModel> cost_model);
+
   /*!
    * \brief Terminate a task
    * \param task_id The id of the task to be terminated
@@ -198,6 +224,18 @@ class TaskSchedulerNode : public runtime::Object {
   void TouchTask(int task_id);
   /*! \brief Print out a human-readable format of the tuning statistics. */
   void PrintTuningStatistics();
+  
+  PackedFunc GetLogger() const;
+
+  Array<TaskRecord> GetTaskRecord() const;
+
+  Array<MeasureCallback> GetMeasureCallbacks() const;
+
+  Optional<Database> GetDatabase() const;
+
+  Optional<CostModel> GetCostModel() const;
+
+  int GetRemainingTasks() const;
 
   static constexpr const char* _type_key = "meta_schedule.TaskScheduler";
   TVM_DECLARE_BASE_OBJECT_INFO(TaskSchedulerNode, Object);
@@ -277,6 +315,18 @@ class TaskScheduler : public runtime::ObjectRef {
    */
   TVM_DLL static TaskScheduler GradientBased(PackedFunc logger, double alpha, int window_size,
                                              support::LinearCongruentialEngine::TRandState seed);
+  
+
+  /*!
+   * \brief Create a task scheduler that fetches tasks in a allpython based fashion.
+   * \param logger The tuning task's logging function.
+   * \param alpha The parameter alpha to control gradient computation.
+   * \param window_size The parameter to control backward window size.
+   * \param seed The random seed.
+   * \return The task scheduler created.
+   */
+  TVM_DLL static TaskScheduler AllPythonBased(PackedFunc logger, double alpha, int window_size,
+                                             support::LinearCongruentialEngine::TRandState seed);
   /*!
    * \brief Create a task scheduler with customized methods on the python-side.
    * \param logger The tuning task's logging function.
@@ -290,6 +340,8 @@ class TaskScheduler : public runtime::ObjectRef {
       PyTaskSchedulerNode::FJoinRunningTask f_join_running_task, PyTaskSchedulerNode::FTune f_tune);
   TVM_DEFINE_MUTABLE_NOTNULLABLE_OBJECT_REF_METHODS(TaskScheduler, ObjectRef, TaskSchedulerNode);
 };
+
+
 
 }  // namespace meta_schedule
 }  // namespace tvm

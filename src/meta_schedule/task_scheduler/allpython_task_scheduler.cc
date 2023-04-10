@@ -21,8 +21,8 @@
 namespace tvm {
 namespace meta_schedule {
 
-/*! \brief The gradient based task scheduler. */
-class GradientBasedNode final : public TaskSchedulerNode {
+/*! \brief The All Python based task scheduler. */
+class AllPythonBasedNode final : public TaskSchedulerNode {
  public:
   double alpha;
   int window_size;
@@ -40,10 +40,12 @@ class GradientBasedNode final : public TaskSchedulerNode {
     // `best_latency_history_` is not visited.
   }
 
-  static constexpr const char* _type_key = "meta_schedule.GradientBased";
-  TVM_DECLARE_FINAL_OBJECT_INFO(GradientBasedNode, TaskSchedulerNode);
+  static constexpr const char* _type_key = "meta_schedule.AllPythonBased";
+  TVM_DECLARE_FINAL_OBJECT_INFO(AllPythonBasedNode, TaskSchedulerNode);
 
  public:
+
+
   void Tune(Array<TuneContext> tasks, Array<FloatImm> task_weights, int max_trials_global,
             int max_trials_per_task, int num_trials_per_iter, Builder builder, Runner runner,
             Array<MeasureCallback> measure_callbacks, Optional<Database> database,
@@ -146,9 +148,9 @@ class GradientBasedNode final : public TaskSchedulerNode {
   }
 };
 
-TaskScheduler TaskScheduler::GradientBased(PackedFunc logger, double alpha, int window_size,
+TaskScheduler TaskScheduler::AllPythonBased(PackedFunc logger, double alpha, int window_size,
                                            support::LinearCongruentialEngine::TRandState seed) {
-  ObjectPtr<GradientBasedNode> n = make_object<GradientBasedNode>();
+  ObjectPtr<AllPythonBasedNode> n = make_object<AllPythonBasedNode>();
   n->logger = logger;
   n->alpha = alpha;
   n->window_size = window_size;
@@ -156,9 +158,9 @@ TaskScheduler TaskScheduler::GradientBased(PackedFunc logger, double alpha, int 
   return TaskScheduler(n);
 }
 
-TVM_REGISTER_NODE_TYPE(GradientBasedNode);
-TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerGradientBased")
-    .set_body_typed(TaskScheduler::GradientBased);
+TVM_REGISTER_NODE_TYPE(AllPythonBasedNode);
+TVM_REGISTER_GLOBAL("meta_schedule.TaskSchedulerAllPythonBased")
+    .set_body_typed(TaskScheduler::AllPythonBased);
 
 }  // namespace meta_schedule
 }  // namespace tvm

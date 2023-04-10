@@ -131,7 +131,6 @@ def derived_object(cls: type) -> type:
             # fall back to instance attribute if there is not any
             # return self._inst.__getattribute__(name)
             import inspect  # pylint: disable=import-outside-toplevel
-
             result = self._inst.__getattribute__(name)
             if inspect.ismethod(result):
 

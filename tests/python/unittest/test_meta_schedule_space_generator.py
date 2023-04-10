@@ -68,6 +68,7 @@ def schedule_matmul(sch: Schedule):
 def _check_correct(schedule: Schedule):
     trace = schedule.trace
     for inst in trace.decisions:
+        print(inst,trace.decisions[inst])
         assert math.prod(trace.decisions[inst]) == 1024
 
 
@@ -107,4 +108,6 @@ def test_meta_schedule_design_space_generator_NIE():
 
 
 if __name__ == "__main__":
-    tvm.testing.main()
+    test_meta_schedule_space_generator_schedule_fn()
+    print("---------------------------")
+    test_meta_schedule_design_space_generator_union()

@@ -111,7 +111,8 @@ def test_sample_categorical():
     candidates = [5, 2, 7, 1]
     probs = [0.15, 0.55, 0.05, 0.25]
     for _ in range(n):
-        v = sch.get(sch.sample_categorical(candidates, probs))
+        m = sch.sample_categorical(candidates, probs)
+        v = sch.get(m)
         counter[v] += 1
     for i, prob in enumerate(probs):
         assert (prob - 0.07) * n <= counter[candidates[i]] <= (prob + 0.07) * n
@@ -145,7 +146,7 @@ def test_sample_categorical_serialize():
         rv = sch.get(sch.sample_categorical(candidates, probs))  # pylint: disable=invalid-name
         decisions.append(rv)
     new_sch = verify_trace_roundtrip(sch, mod=elementwise)
-    for i, new_inst in enumerate(new_sch.trace.insts):
+    for i, new_inst in enumerate(new_sch.trace.insts): # sch - > instruction -> (probs)(decisions) -> new_sch
         assert decisions[i] == candidates[new_sch.trace.decisions[new_inst].value]
 
 
@@ -213,4 +214,4 @@ def test_sample_perfect_tile_after_copy():
 
 
 if __name__ == "__main__":
-    tvm.testing.main()
+    test_sample_categorical()
