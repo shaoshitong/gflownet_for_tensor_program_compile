@@ -32,7 +32,10 @@ class MyModule:
                 with T.init():
                     C[vi, vj] = 0.0
                 C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
-
+        for i, j in T.grid(128, 128):
+            with T.block("B"):
+                vi, vj = T.axis.remap("SS", [i, j])
+                C[vi, vj] = B[vi, vj] + 1.0
 
 task_scheduler = ms.task_scheduler.create("allpython")
 cost_model = task_scheduler.get_costmodel()

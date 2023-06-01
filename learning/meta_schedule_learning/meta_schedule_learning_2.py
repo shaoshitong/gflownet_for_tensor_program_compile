@@ -133,31 +133,31 @@ designspace  = task_scheduler.tune_designspace(
     cost_model=cost_model,
 )
 from tvm.tir import Schedule
-for task_designspace in designspace:
-    for sub_designspace in task_designspace:
-        sub_schedule: Schedule = sub_designspace
-        print(sub_schedule.trace)
-        print("="*120)
-# task_scheduler.tune(
-#     tasks=tasks,
-#     task_weights=task_weights,
-#     max_trials_global=max_trials_global,
-#     max_trials_per_task=max_trials_per_task,
-#     num_trials_per_iter=num_trials_per_iter,
-#     builder=builder,
-#     runner=runner,
-#     measure_callbacks=measure_callbacks,
-#     database=database,
-#     cost_model=cost_model,
-# )
+# for task_designspace in designspace:
+#     for sub_designspace in task_designspace:
+#         sub_schedule: Schedule = sub_designspace
+#         print(sub_schedule.trace)
+#         print("="*120)
+task_scheduler.tune(
+    tasks=tasks,
+    task_weights=task_weights,
+    max_trials_global=max_trials_global,
+    max_trials_per_task=max_trials_per_task,
+    num_trials_per_iter=num_trials_per_iter,
+    builder=builder,
+    runner=runner,
+    measure_callbacks=measure_callbacks,
+    database=database,
+    cost_model=cost_model,
+)
 
-# sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
-# a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
-# b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
-# c_nd = tvm.nd.empty((128, 128), "float32")
-# lib = tvm.build(sch.mod, target="llvm")
-# f_timer_after = lib.time_evaluator("main", tvm.cpu())
-# print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
-# sch.trace.show()
-# IPython.display.HTML(code2html(sch.mod.script()))
+sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
+a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
+b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
+c_nd = tvm.nd.empty((128, 128), "float32")
+lib = tvm.build(sch.mod, target="llvm")
+f_timer_after = lib.time_evaluator("main", tvm.cpu())
+print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
+sch.trace.show()
+IPython.display.HTML(code2html(sch.mod.script()))
 
