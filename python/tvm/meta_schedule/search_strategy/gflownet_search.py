@@ -1,6 +1,6 @@
 
 import tvm
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union,Dict
 
 # isort: off
 from typing_extensions import Literal
@@ -22,6 +22,31 @@ from ..profiler import Profiler
 import copy
 from multiprocessing import Value
 
+#zhangchunlei
+import numpy as np
+from tvm._ffi import register_object
+
+from .. import _ffi_api
+from .search_strategy import SearchStrategy
+from .search_strategy import _PySearchStrategy
+from ..space_generator.space_generator import SpaceGenerator
+from ...tir.schedule import Trace
+from tvm.ir import IRModule
+from tvm.tir.schedule import Schedule
+from ..database.database import Workload
+from .. import Profiler
+from .. import utils
+from ..postproc import Postproc
+import numpy as np
+
+if TYPE_CHECKING:
+    from ..cost_model import CostModel
+    from ..database import Database
+    from ..tune_context import TuneContext
+    from ..mutator import Mutator
+    
+    
+
 def forkseed(rand_state):
     rand_state = int(rand_state)
     return (rand_state * 32767) % 1999999973
@@ -31,6 +56,35 @@ class Item:
         self.postproc = postproc
         self.fail_counter = Value('i', 0)
 
+@register_object("meta_schedule.PerThreadData")  
+class PerThreadData:
+    #auxiliary class for MyEvolutionarySearch
+    mod :IRModule
+    rand_state : np.int64
+    trace_sampler : Callable[[], int]
+    mutator_sampler : Callable[[Optional[Mutator]], None] 
+    
+    def __init__(self) -> None:
+        mod = None
+        rand_state = np.int64(-1)
+        trace_sampler = None
+        mutatot_sampler = None
+    
+    def Set(scores: List[float], genetic_mutate_prob:float, mutator_probs:Dict[Mutator, float]):
+        _ffi_api.EvolutionarySearchPerThreadDataSet(
+        scores,
+        genetic_mutate_prob,
+        mutator_probs,
+        )
+        
+    def MakeMutatorSampler(genetic_mutate_prob:float, mutator_probs:Dict[Mutator,float],rand_state:np.int64):
+        _ffi_api.MakeMutatorSampler(
+            genetic_mutate_prob,
+            mutator_probs,
+            rand_state,
+        )        
+        
+        
 class ThreadedTraceApply:
     def __init__(self,postprocs) -> None:
         self.n_ = len(postprocs)
@@ -168,7 +222,16 @@ class State:
                 LOG(FATAL) << "ValueError: Cannot postprocess the trace:\n" << trace
                 raise
 
-
+    def SampleInitPopulation(num : int, EvolutionarySearch:OurPySearchStrategy)-> List[Schedule]:
+        _ = Profiler.timeit("EvoSearch/SampleInitPopulation")
+        pp : ThreadTraceApply(MyEvolutionarySearch.postprocs)
+        out_schs = []
+        fail_count = 0
+        while(len(out_schs) < EvolutionarySearch.init_min_unmeasured and fail_count < EvolutionarySearch.max_fail_count){
+            
+        }
+        
+        
     def generatemeasurecandidates(self,):
         pass
 
