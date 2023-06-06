@@ -21,6 +21,7 @@ from .search_strategy import PySearchStrategy,SearchStrategy,MeasureCandidate
 from ..profiler import Profiler
 import copy
 from multiprocessing import Value
+import multiprocessing
 
 #zhangchunlei
 import numpy as np
@@ -91,29 +92,19 @@ class ThreadedTraceApply:
         self.items_ = [Item(postprocs[i]) for i in range(self.n_)]
 
     def Apply(self,mod,trace,rand_state):
-        sch = Schedule.Traced(mod,forkseed(rand_state),0,tir.ScheduleErrorRenderLevel.kNone)
-        """
-      Optional<tir::Schedule> Apply(const IRModule& mod, const tir::Trace& trace,
-                                TRandState* rand_state) {
-    tir::Schedule sch =
-        tir::Schedule::Traced(mod,
-                              /*rand_state=*/ForkSeed(rand_state),
-                              /*debug_mode=*/0,
-                              /*error_render_level=*/tir::ScheduleErrorRenderLevel::kNone);
+        sch = Schedule(mod,
+                       forkseed(rand_state),
+                       debug_mask=0,
+                       error_render_level = "none")
+        trace.apply_to_schedule(sch,remove_postproc=True)
+        sch.enter_postproc()
+        for i in range(self.n_):
+            item = self.items_[i]
+            if not item.postproc.apply(sch):
+                item.fail_counter += 1
+                return None
+        return sch
 
-    trace->ApplyToSchedule(sch, /*remove_postproc=*/true);
-    sch->EnterPostproc();
-
-    for (int i = 0; i < n_; ++i) {
-      Item& item = items_[i];
-      if (!item.postproc->Apply(sch)) {
-        item.fail_counter++;
-        return NullOpt;
-      }
-    }
-    return sch;
-  }
-        """
     
 @register_object("meta_schedule.State")
 class State:
@@ -168,37 +159,6 @@ class State:
         self.token_ = database.commit_workload(self.mod)
 
     def pickbestfromdatabase(self,num) -> List[Schedule]:
-        """
-        std::vector<Schedule> EvolutionarySearchNode::State::PickBestFromDatabase(int num) {
-  auto _ = Profiler::TimedScope("EvoSearch/PickBestFromDatabase");
-  std::vector<tir::Trace> measured_traces;
-  measured_traces.reserve(num);
-  Array<TuningRecord> top_records = this->database_->GetTopK(this->token_, num);
-  for (TuningRecord record : top_records) {
-    measured_traces.push_back(record->trace);
-  }
-  int actual_num = measured_traces.size();
-  ThreadedTraceApply pp(self->postprocs_);
-  std::vector<Schedule> results(actual_num, Schedule{nullptr});
-  auto f_proc_measured = [this, &measured_traces, &results, &pp](int thread_id,
-                                                                 int trace_id) -> void {
-    PerThreadData& data = this->per_thread_data_.at(thread_id);
-    TRandState* rand_state = &data.rand_state;
-    const IRModule& mod = data.mod;
-    tir::Trace trace = measured_traces.at(trace_id);
-    Schedule& result = results.at(trace_id);
-    ICHECK(!result.defined());
-    if (Optional<Schedule> sch = pp.Apply(mod, trace, rand_state)) {
-      result = sch.value();
-    } else {
-      LOG(FATAL) << "ValueError: Cannot postprocess the trace:\n" << trace;
-      throw;
-    }
-  };
-  support::parallel_for_dynamic(0, actual_num, self->ctx_->num_threads, f_proc_measured);
-  return results;
-}
-        """
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
         self.database_:Database
@@ -215,13 +175,16 @@ class State:
             trace = measured_traces[trace_id]
             result = results[trace_id]
             assert result is None, f"result {trace_id} should be None"
-
-            if sch := pp.apply(mod, trace, rand_state):
-                result = sch
+            sch = pp.apply(mod, trace, rand_state)
+            if sch is not None:
+                results[trace_id] = sch
             else:
-                LOG(FATAL) << "ValueError: Cannot postprocess the trace:\n" << trace
-                raise
-
+                raise ValueError(f"Cannot postprocess the trace:\n{trace}")
+        pool = multiprocessing.Pool(processes=self.context.num_threads)
+        pool.map(f_proc_measured, range(actual_num))
+        pool.close()
+        pool.join()
+        return results
     def SampleInitPopulation(num : int, EvolutionarySearch:OurPySearchStrategy)-> List[Schedule]:
         _ = Profiler.timeit("EvoSearch/SampleInitPopulation")
         pp : ThreadTraceApply(MyEvolutionarySearch.postprocs)
@@ -233,8 +196,7 @@ class State:
         
         
     def generatemeasurecandidates(self,):
-        pass
-
+        
 
 @derived_object
 class OurPySearchStrategy(PySearchStrategy):
