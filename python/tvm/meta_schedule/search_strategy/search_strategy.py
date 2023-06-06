@@ -27,11 +27,11 @@ from typing_extensions import Literal
 from tvm._ffi import register_object
 from tvm.runtime import Object
 from tvm.tir.schedule import Schedule
-
+import tvm
 from .. import _ffi_api
 from ..arg_info import ArgInfo
 from ..runner import RunnerResult
-
+from ..utils import cpu_count, derived_object, get_global_func_with_default_on_worker
 if TYPE_CHECKING:
     from ..cost_model import CostModel
     from ..database import Database

@@ -180,7 +180,6 @@ def workload_key_to_tensors(workload_key):
         The registered compute declaration Tensors.
     """
     global WORKLOAD_FUNC_REGISTRY
-
     # We register ComputeDAG with both hash and argumetns, which are fixed in ComputeDAG,
     # so we use an entire workload key to query the ComputeDAG.
     if workload_key in WORKLOAD_FUNC_REGISTRY:

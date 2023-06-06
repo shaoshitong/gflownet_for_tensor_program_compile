@@ -174,7 +174,7 @@ def extract_tasks(
         with open(dump_workload_to_dag_log, "w") as f:
             json.dump({task.workload_key: str(task.compute_dag) for task in tasks}, f)
 
-    return tasks, weights
+    return tasks, weights,env
 
 
 class TracingMode:

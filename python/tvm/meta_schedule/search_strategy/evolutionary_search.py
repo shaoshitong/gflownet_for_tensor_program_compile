@@ -21,6 +21,8 @@ from .. import _ffi_api
 from .search_strategy import SearchStrategy
 
 
+
+
 @register_object("meta_schedule.EvolutionarySearch")
 class EvolutionarySearch(SearchStrategy):
     """
@@ -79,3 +81,4 @@ class EvolutionarySearch(SearchStrategy):
             genetic_max_fail_count,
             eps_greedy,
         )
+    

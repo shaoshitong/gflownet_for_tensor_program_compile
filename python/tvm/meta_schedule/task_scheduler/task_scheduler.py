@@ -240,6 +240,45 @@ class TaskScheduler(Object):
             cost_model,
         )
 
+    def evolve(
+        self,
+        tasks: List[TuneContext],
+        task_weights: List[float],
+        max_trials_global: int,
+        max_trials_per_task: int,
+        num_trials_per_iter: int,
+        builder: Builder,
+        runner: Runner,
+        measure_callbacks: List[MeasureCallback],
+        database: Optional[Database],
+        cost_model: Optional[CostModel],
+    ) -> None:
+        """Auto-tuning for Get Design Space in Python Search.
+        Parameters
+        ----------
+        tasks : List[TuneContext]
+            The list of tuning contexts as tasks.
+        task_weights : List[float]
+            The list of task weights.
+        max_trials_global : int
+            The maximum number of trials globally.
+        max_trials_per_task : int
+            The maximum number of trials per task.
+        num_trials_per_iter : int
+            The number of trials per iteration.
+        builder : Builder
+            The builder.
+        runner : Runner
+            The runner.
+        measure_callbacks : List[MeasureCallback]
+            The list of measure callbacks.
+        database : Optional[Database]
+            The database.
+        cost_model : Optional[CostModel]
+            The cost model.
+        """
+        task_weights = [float(w) for w in task_weights]
+
     
     @staticmethod
     def create(  # pylint: disable=keyword-arg-before-vararg
