@@ -298,8 +298,8 @@ class State:
     
     
     def ModuleHash(self,mod: IRModule)->int:
-        #need implement
-        pass   
+        #取决于 ModuleEquality的实现
+        pass
     
     def PickWithEpsGreedy(self, unmeasured:List[Schedule], bests:List[Schedule], num:int)->List[Schedule]:
         """
@@ -384,7 +384,10 @@ class State:
                 return None
         return AssembleCandidates(picks)
     
-    
+    def NotifyRunnerResults(self, measure_candidates:List[MeasureCandidate],results:List[RunnerResult]):
+        self.st += len(results)
+        self.ed += len(results)
+        
         
 
 @derived_object
