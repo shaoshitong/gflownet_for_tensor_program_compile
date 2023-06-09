@@ -30,20 +30,15 @@
 namespace tvm {
 namespace meta_schedule {
 
-ModuleEqualityRef::ModuleEqualityRef() {
-  ObjectPtr<ModuleEquality> n = make_object<ModuleEquality>();
-  data_ = n;
-}
-
-size_t ModuleEqualityStructural::Hash(IRModule mod) const { return tvm::StructuralHash()(mod); }
+int64_t ModuleEqualityStructural::Hash(IRModule mod) const { return tvm::StructuralHash()(mod); }
 
 bool ModuleEqualityStructural::Equal(IRModule lhs, IRModule rhs) const { return tvm::StructuralEqual()(lhs, rhs); }
 
 
-class ModuleEqualityStructuralRef: public ModuleEqualityRef {
-  public:
-    using ModuleEqualityRef::ModuleEqualityRef;
-};
+// class ModuleEqualityStructuralRef: public ModuleEqualityRef {
+//   public:
+//     using ModuleEqualityRef::ModuleEqualityRef;
+// };
 
 class SEqualHandlerIgnoreNDArray : public SEqualHandlerDefault {
  public:
@@ -76,20 +71,20 @@ class SHashHandlerIgnoreNDArray : public SHashHandlerDefault {
 };
 
 
-size_t ModuleEqualityIgnoreNDArray::Hash(IRModule mod) const { return SHashHandlerIgnoreNDArray().Hash(mod, false); }
+int64_t ModuleEqualityIgnoreNDArray::Hash(IRModule mod) const { return SHashHandlerIgnoreNDArray().Hash(mod, false); }
 
 bool ModuleEqualityIgnoreNDArray::Equal(IRModule lhs, IRModule rhs) const {
     return SEqualHandlerIgnoreNDArray().Equal(lhs, rhs, false);
   }
 
-class ModuleEqualityIgnoreNDArrayRef : public ModuleEqualityRef {
-  public:
-    using ModuleEqualityRef::ModuleEqualityRef;
-};
+// class ModuleEqualityIgnoreNDArrayRef : public ModuleEqualityRef {
+//   public:
+//     using ModuleEqualityRef::ModuleEqualityRef;
+// };
 
 // The NDArray-ignoring variant of structural equal / hash is used for the module equality
 // on the extracted anchor blocks.
-size_t ModuleEqualityAnchorBlock::Hash(IRModule mod) const {
+int64_t ModuleEqualityAnchorBlock::Hash(IRModule mod) const {
   auto anchor_block = tir::FindAnchorBlock(mod);
   if (anchor_block) {
     return SHashHandlerIgnoreNDArray().Hash(GetRef<tir::Block>(anchor_block), false);
@@ -106,10 +101,10 @@ bool ModuleEqualityAnchorBlock::Equal(IRModule lhs, IRModule rhs) const {
   return ModuleEqualityIgnoreNDArray().Equal(lhs, rhs);
 }
 
-class ModuleEqualityAnchorBlockRef : public ModuleEqualityRef {
-  public:
-    using ModuleEqualityRef::ModuleEqualityRef;
-};
+// class ModuleEqualityAnchorBlockRef : public ModuleEqualityRef {
+//   public:
+//     using ModuleEqualityRef::ModuleEqualityRef;
+// };
 
 std::unique_ptr<ModuleEquality> ModuleEquality::Create(const std::string& mod_eq_name) {
   if (mod_eq_name == "structural") {
@@ -122,31 +117,35 @@ std::unique_ptr<ModuleEquality> ModuleEquality::Create(const std::string& mod_eq
   LOG(FATAL) << "Unknown module equality " << mod_eq_name;
 }
 
-std::unique_ptr<ModuleEqualityRef> ModuleEqualityRef::Create(const std::string& mod_eq_name) {
+ModuleEqualityRef ModuleEqualityRef::Create(const std::string& mod_eq_name) {
   if (mod_eq_name == "structural") {
-    return std::make_unique<ModuleEqualityStructuralRef>();
-  } else if (mod_eq_name == "ignore-ndarray") {
-    return std::make_unique<ModuleEqualityIgnoreNDArrayRef>();
+    ObjectPtr<ModuleEqualityStructural> n = make_object<ModuleEqualityStructural>();
+    return ModuleEqualityRef(n);
+} else if (mod_eq_name == "ignore-ndarray") {
+    ObjectPtr<ModuleEqualityIgnoreNDArray> n = make_object<ModuleEqualityIgnoreNDArray>();
+    return ModuleEqualityRef(n);
   } else if (mod_eq_name == "anchor-block") {
-    return std::make_unique<ModuleEqualityAnchorBlockRef>();
+    ObjectPtr<ModuleEqualityAnchorBlock> n = make_object<ModuleEqualityAnchorBlock>();
+    return ModuleEqualityRef(n);
   }
-  LOG(FATAL) << "Unknown module equality " << mod_eq_name;
+    LOG(FATAL) << "Unknown module equality " << mod_eq_name;
 }
 
-TVM_REGISTER_NODE_TYPE(ModuleEquality)
+TVM_REGISTER_OBJECT_TYPE(ModuleEquality);
 TVM_REGISTER_NODE_TYPE(ModuleEqualityStructural);
 TVM_REGISTER_NODE_TYPE(ModuleEqualityIgnoreNDArray);
 TVM_REGISTER_NODE_TYPE(ModuleEqualityAnchorBlock);
 
-TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityStructural").set_body_typed([]() -> ModuleEqualityStructuralRef {
-  return ModuleEqualityStructuralRef();
-});
-TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityIgnoreNDArray").set_body_typed([]() -> ModuleEqualityIgnoreNDArrayRef {
-  return ModuleEqualityIgnoreNDArrayRef();
-});
-TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityAnchorBlock").set_body_typed([]() -> ModuleEqualityAnchorBlockRef {
-  return ModuleEqualityAnchorBlockRef();
-});
+// TVM_REGISTER_GLOBAL("meta_schedule.ModuleEquality").set_body_typed([]() -> ModuleEqualityRef {
+//   return ModuleEqualityStructuralRef();
+// });
+// TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityIgnoreNDArray").set_body_typed([]() -> ModuleEqualityIgnoreNDArrayRef {
+//   return ModuleEqualityIgnoreNDArrayRef();
+// });
+// TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityAnchorBlock").set_body_typed([]() -> ModuleEqualityAnchorBlockRef {
+//   return ModuleEqualityAnchorBlockRef();
+// });
+TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityCreate").set_body_typed(ModuleEqualityRef::Create);
 TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityHash")
     .set_body_method<ModuleEqualityRef>(&ModuleEquality::Hash);
 TVM_REGISTER_GLOBAL("meta_schedule.ModuleEqualityEqual")

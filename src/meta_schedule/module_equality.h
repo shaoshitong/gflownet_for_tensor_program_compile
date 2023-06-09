@@ -28,11 +28,11 @@ namespace tvm {
 namespace meta_schedule {
 
 /*! \brief Method to compute hash and determine equality of modules  */
-class ModuleEquality {
+class ModuleEquality : public runtime::Object {
  public:
+   void VisitAttrs(tvm::AttrVisitor* v) {}
   virtual ~ModuleEquality() = default;
-
-  virtual size_t Hash(IRModule mod) const = 0;
+  virtual int64_t Hash(IRModule mod) const = 0;
   virtual bool Equal(IRModule lhs, IRModule rhs) const = 0;
 
   /*!
@@ -48,14 +48,51 @@ class ModuleEquality {
    *                      For the definition of the anchor block, see tvm/tir/analysis.h.
    * \return An owning pointer to the created instance
    */
+
   static std::unique_ptr<ModuleEquality> Create(const std::string& mod_eq_name);
+  static constexpr const char* _type_key = "meta_schedule.ModuleEquality";
+  TVM_DECLARE_BASE_OBJECT_INFO(ModuleEquality, Object);
+};
+
+
+class ModuleEqualityStructural : public ModuleEquality {
+ public:
+    void VisitAttrs(tvm::AttrVisitor* v) {}
+  int64_t Hash(IRModule mod) const final;
+  bool Equal(IRModule lhs, IRModule rhs) const final;
+  static constexpr const char* _type_key = "meta_schedule.ModuleEqualityStructural";
+  TVM_DECLARE_FINAL_OBJECT_INFO(ModuleEqualityStructural, ModuleEquality);
+};
+
+class ModuleEqualityIgnoreNDArray : public ModuleEquality {
+ public:
+    void VisitAttrs(tvm::AttrVisitor* v) {}
+  int64_t Hash(IRModule mod) const final;
+  bool Equal(IRModule lhs, IRModule rhs) const final;
+  static constexpr const char* _type_key = "meta_schedule.ModuleEqualityIgnoreNDArray";
+  TVM_DECLARE_FINAL_OBJECT_INFO(ModuleEqualityIgnoreNDArray, ModuleEquality);
+};
+
+class ModuleEqualityAnchorBlock : public ModuleEquality {
+ public:
+    void VisitAttrs(tvm::AttrVisitor* v) {}
+  int64_t Hash(IRModule mod) const final;
+  bool Equal(IRModule lhs, IRModule rhs) const final;
+  static constexpr const char* _type_key = "meta_schedule.ModuleEqualityAnchorBlock";
+  TVM_DECLARE_FINAL_OBJECT_INFO(ModuleEqualityAnchorBlock, ModuleEquality);
+};
+
+class ModuleEqualityRef: public runtime::ObjectRef {
+ public:
+  TVM_DLL static ModuleEqualityRef Create(const std::string& mod_eq_name);
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(ModuleEqualityRef, ObjectRef, ModuleEquality);
 };
 
 /*! \brief Functor to compute hash a module using the provided method. */
 class ModuleHash {
  public:
   explicit ModuleHash(const ModuleEquality& mod_eq) : mod_eq_(mod_eq) {}
-  size_t operator()(const IRModule& mod) const { return mod_eq_.Hash(mod); }
+  int64_t operator()(const IRModule& mod) const { return mod_eq_.Hash(mod); }
 
  private:
   const ModuleEquality& mod_eq_;

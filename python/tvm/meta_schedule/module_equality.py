@@ -25,49 +25,24 @@ from . import _ffi_api
 
 @register_object("meta_schedule.ModuleEquality")
 class ModuleEquality(Object):
-    """base"""
-    def __init__(self) -> None:
+    """
+    A TVM object cost model to support customization on the python side.
+    This is NOT the user facing class for function overloading inheritance.
+
+    See also: PyCostModel
+    """
+
+    def __init__(
+        self,
+        mod_eq_name
+    ):
+        self.mod_eq_name = mod_eq_name
         self.__init_handle_by_constructor__(
-            _ffi_api.ModuleEquality, ) # type: ignore # pylint: disable=no-member
-        
+            _ffi_api.ModuleEqualityCreate,  # type: ignore # pylint: disable=no-member
+            mod_eq_name
+        )
     def hash(self, mod) -> int:
-        raise NotImplementedError
+        return _ffi_api.ModuleEqualityHash(self, mod)
     
     def equal(self, lhs, rhs) -> bool:
-        raise NotImplementedError
-    
-@register_object("meta_schedule.ModuleEqualityStructural")
-class ModuleEqualityStructural(Object):
-    """structural"""
-    def __init__(self) -> None:
-        self.__init_handle_by_constructor__(
-            _ffi_api.ModuleEqualityStructural,  # type: ignore # pylint: disable=no-member
-        )
-    def hash(self, mod) -> int:
-        return _ffi_api.ModuleEqualityStructuralHash(self, mod)
-    def equal(self, lhs, rhs) -> bool:
-        return _ffi_api.ModuleEqualityStructuralEqual(self, lhs, rhs)
-
-@register_object("meta_schedule.ModuleEqualityIgnoreNDArray")
-class ModuleEqualityIgnoreNDArray(Object):
-    """ignore-ndarray"""
-    def __init__(self) -> None:
-        self.__init_handle_by_constructor__(
-            _ffi_api.ModuleEqualityIgnoreNDArray,  # type: ignore # pylint: disable=no-member
-        )
-    def hash(self, mod) -> int:
-        return _ffi_api.ModuleEqualityIgnoreNDArrayHash(self, mod)
-    def equal(self, lhs, rhs) -> bool:
-        return _ffi_api.ModuleEqualityIgnoreNDArrayEqual(self, lhs, rhs)
-
-@register_object("meta_schedule.ModuleEqualityAnchorBlock")
-class ModuleEqualityAnchorBlock(Object):
-    """anchor-block"""
-    def __init__(self) -> None:
-        self.__init_handle_by_constructor__(
-            _ffi_api.ModuleEqualityAnchorBlock,  # type: ignore # pylint: disable=no-member
-        )
-    def hash(self, mod) -> int:
-        return _ffi_api.ModuleEqualityAnchorBlockHash(self, mod)
-    def equal(self, lhs, rhs) -> bool:
-        return _ffi_api.ModuleEqualityAnchorBlockEqual(self, lhs, rhs)
+        return _ffi_api.ModuleEqualityEqual(self, lhs, rhs)
