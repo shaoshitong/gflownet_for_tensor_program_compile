@@ -187,6 +187,30 @@ class TaskSchedulerNode : public runtime::Object {
                     Optional<Database> database,               //
                     Optional<CostModel> cost_model);
   
+    /*!
+   * \brief Jointly tune a given list of tasks without Evolutionary algorithm implementation for C++
+   * \param tasks The tasks to be tuned
+   * \param task_weights The weight of each task
+   * \param max_trials_global The maximum number of trials to be performed globally
+   * \param max_trials_per_task The maximum number of trials to be performed for each task
+   * \param num_trials_per_iter The number of trials to be performed in each iteration
+   * \param builder The MetaSchedule builder
+   * \param runner The MetaSchedule runner
+   * \param measure_callbacks The callbacks to be called after each measurement
+   * \param database The database used in tuning
+   * \param cost_model The cost model used in tuning
+   */
+  virtual void DecoupleEvolveTune(Array<TuneContext> tasks,                  //
+                    Array<FloatImm> task_weights,              //
+                    int max_trials_global,                     //
+                    int max_trials_per_task,                   //
+                    int num_trials_per_iter,                   //
+                    Builder builder,                           //
+                    Runner runner,                             //
+                    Array<MeasureCallback> measure_callbacks,  //
+                    Optional<Database> database,               //
+                    Optional<CostModel> cost_model);
+  
 
   /*!
    * \brief Jointly tune a given list of tasks and only return the design space

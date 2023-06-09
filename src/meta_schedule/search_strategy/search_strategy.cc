@@ -39,7 +39,7 @@ void PySearchStrategyNode::PreTuning(int max_trials, int num_trials_per_iter,
                                      const Optional<Database>& database,
                                      const Optional<CostModel>& cost_model) {
   ICHECK(f_pre_tuning != nullptr) << "PySearchStrategy's PreTuning method not implemented!";
-  f_pre_tuning(max_trials, num_trials_per_iter, design_spaces, database, cost_model);
+  f_pre_tuning(max_trials, num_trials_per_iter, design_spaces, database, cost_model); // PreTuning
 }
 
 void PySearchStrategyNode::PostTuning() {

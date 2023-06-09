@@ -238,7 +238,7 @@ void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weigh
                                     << Concat(trace->AsPython(false), "\n");
     }
     ctx->search_strategy.value()->PreTuning(max_trials_per_task, num_trials_per_iter, design_spaces,
-                                            database, cost_model);
+                                            database, cost_model); // add cost model to search_strategy.state.cost_model
   }
 
   int num_trials_already = 0;
@@ -252,14 +252,15 @@ void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weigh
       TerminateTask(task_id);
       continue;
     }
+
     if (Optional<Array<MeasureCandidate>> candidates = task->measure_candidates =
-            task->ctx->search_strategy.value()->GenerateMeasureCandidates()) {
+            task->ctx->search_strategy.value()->GenerateMeasureCandidates()) { // evolve
       int num_candidates = candidates.value().size();
       num_trials_already += num_candidates;
       TVM_PY_LOG(INFO, this->logger) << "Sending " << num_candidates << " sample(s) to builder";
-      SendToBuilder(task, builder);
+      SendToBuilder(task, builder); // RunnerResult = ( <path>,None )
       TVM_PY_LOG(INFO, this->logger) << "Sending " << num_candidates << " sample(s) to runner";
-      SendToRunner(task, runner);
+      SendToRunner(task, runner); // 
     } else {
       TerminateTask(task_id);
     }
