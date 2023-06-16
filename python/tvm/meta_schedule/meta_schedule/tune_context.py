@@ -24,7 +24,7 @@ from typing_extensions import Literal
 # isort: on
 
 from tvm import IRModule
-from tvm._ffi import register_object, register_func
+from tvm._ffi import register_func, register_object
 from tvm.runtime import Object
 from tvm.target import Target
 from tvm.tir import PrimFunc, Schedule
@@ -122,11 +122,7 @@ class TuneContext(Object):
                 space_generator = SpaceGenerator.create(space_generator)
         if search_strategy is not None:
             if not isinstance(search_strategy, SearchStrategy):
-                if search_strategy == "gflownet":
-                    kwargs = {"context":self}
-                else:
-                    kwargs = {}
-                search_strategy = SearchStrategy.create(search_strategy,**kwargs)
+                search_strategy = SearchStrategy.create(search_strategy)
         if logger is None:
             logger = get_logger(__name__)
         if not isinstance(num_threads, int):

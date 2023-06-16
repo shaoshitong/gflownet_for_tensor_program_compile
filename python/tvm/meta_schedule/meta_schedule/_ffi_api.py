@@ -14,15 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
+"""FFI APIs for tvm.meta_schedule"""
+from .._ffi import _init_api
 
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+_init_api("meta_schedule", __name__)  # pylint: disable=protected-access

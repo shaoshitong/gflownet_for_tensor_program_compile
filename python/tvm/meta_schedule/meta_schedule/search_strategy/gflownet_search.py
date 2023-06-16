@@ -17,11 +17,12 @@ from tvm.tir.schedule import Schedule, Trace
 
 from .. import _ffi_api
 from ..arg_info import ArgInfo
+from ..cost_model import CostModel
 from ..database import Database
 from ..gflownet_utils.concurrentbitmask import ConcurrentBitmask
 from ..gflownet_utils.heatmap import SizedHeap
 from ..gflownet_utils.irmoduleset import IRModuleSet
-from ..module_equality import ModuleEquality
+from ..module_equality import E, ModuleEquality
 from ..profiler import Profiler
 from ..runner import RunnerResult
 from ..tune_context import TuneContext
@@ -49,8 +50,8 @@ from tvm._ffi import register_object
 from tvm.ir import IRModule
 from tvm.tir.schedule import Schedule
 
-from ...tir.schedule import Trace
-from ..profiler import Profiler, _ffi_api
+from tvm.tir.schedule import Trace
+from .. import Profiler, _ffi_api, utils
 from ..database.database import Workload
 from ..postproc import Postproc
 from ..space_generator.space_generator import SpaceGenerator
@@ -106,10 +107,10 @@ def list_swap(list1, list2):
 """Need to implement"""
 class PerThreadData:
     #auxiliary class for MyEvolutionarySearch
-    mod :IRModule = None
-    rand_state : np.int64 = np.int64(-1)
-    trace_sampler = None
-    mutator_sampler = None
+    mod :IRModule
+    rand_state : np.int64
+    trace_sampler : Callable[[], int]
+    mutator_sampler : Callable[[Optional[Mutator]], None] 
     
     def __init__(self) -> None:
         self.mod = None
@@ -117,7 +118,7 @@ class PerThreadData:
         self.trace_sampler = None
         self.mutatot_sampler = None
     
-    def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs):
+    def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs:Dict[Mutator, float]):
         from tvm import tir
         tir.multiply
 
@@ -292,6 +293,7 @@ class State:
     def pickbestfromdatabase(self,num) -> List[Schedule]:
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
+        self.database_:Database
         top_records = self.database_.get_top_k(self.token_, num)
         for record in top_records:
             measured_traces.append(record.trace)
@@ -438,6 +440,7 @@ class State:
         self.ed += len(results)
         
     def EvolveWithCostModel(self,population,num):
+        self.database_:Database
         exists = IRModuleSet(self.model_equality)
         with Profiler.timeit("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads"):
             assert num > 0, "num should be positive"
@@ -524,9 +527,9 @@ class State:
   
 
 @derived_object
-class GflowNetSearch(PySearchStrategy):
+class GflowNetStrategy(PySearchStrategy):
     state: State = None
-    context = None
+    context : TuneContext = None
     population_size = 512
     init_measured_ratio = 0.2
     init_min_unmeasured = 50
@@ -581,11 +584,11 @@ class GflowNetSearch(PySearchStrategy):
 
     def pre_tuning(
         self,
-        max_trials,
-        num_trials_per_iter,
-        design_spaces,
-        database = None,
-        cost_model = None,
+        max_trials: int,
+        num_trials_per_iter: int,
+        design_spaces: List[Schedule],
+        database: Optional["Database"] = None,
+        cost_model: Optional["CostModel"] = None,
     ) -> None:
         """Pre-tuning for the search strategy.
 

@@ -15,14 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.schedule_rule package.
+Meta Schedule schedule rules are used for modification of
+blocks in a schedule. See also PostOrderApply.
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .add_rfactor import AddRFactor
+from .apply_custom_rule import ApplyCustomRule
+from .auto_bind import AutoBind
+from .auto_inline import AutoInline, InlineConstantScalars
+from .cross_thread_reduction import CrossThreadReduction
+from .multi_level_tiling import (MultiLevelTiling, MultiLevelTilingTensorCore,
+                                 MultiLevelTilingWideVector,
+                                 MultiLevelTilingWithIntrin, ReuseType)
+from .parallel_vectorize_unroll import ParallelizeVectorizeUnroll
+from .random_compute_location import RandomComputeLocation
+from .schedule_rule import PyScheduleRule, ScheduleRule

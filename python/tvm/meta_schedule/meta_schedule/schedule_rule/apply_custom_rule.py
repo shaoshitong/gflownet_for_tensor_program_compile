@@ -14,15 +14,20 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
+"""Create a rule that applies customized rules registered using block attribute `schedule_rule`.
+The rule will be dispatched according to target keys."""
+from tvm._ffi import register_object
 
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .. import _ffi_api
+from .schedule_rule import ScheduleRule
+
+
+@register_object("meta_schedule.ApplyCustomRule")
+class ApplyCustomRule(ScheduleRule):
+    """A rule that applies customized rules registered using block attribute `schedule_rule`.
+    The rule will be dispatched according to target keys."""
+
+    def __init__(self) -> None:
+        self.__init_handle_by_constructor__(
+            _ffi_api.ScheduleRuleApplyCustomRule,  # type: ignore # pylint: disable=no-member
+        )

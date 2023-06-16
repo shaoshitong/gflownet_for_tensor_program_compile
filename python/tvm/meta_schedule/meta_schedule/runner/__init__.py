@@ -15,14 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.runner package.
+Meta Schedule runners that runs an artifact either locally or through the RPC interface
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .config import EvaluatorConfig, RPCConfig
+from .local_runner import LocalRunner, LocalRunnerFuture
+from .rpc_runner import RPCRunner
+from .runner import (PyRunner, PyRunnerFuture, Runner, RunnerFuture,
+                     RunnerInput, RunnerResult, create)

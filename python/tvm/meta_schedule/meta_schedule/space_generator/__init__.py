@@ -15,14 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.space_generator package.
+Meta Schedule design space generators that generates design
+space for generation of measure candidates.
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from ...target import x86
+from .post_order_apply import PostOrderApply
+from .schedule_fn import ScheduleFn
+from .space_generator import (PySpaceGenerator, ScheduleFnType, SpaceGenerator,
+                              create)
+from .space_generator_union import SpaceGeneratorUnion

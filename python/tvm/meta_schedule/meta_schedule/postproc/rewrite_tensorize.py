@@ -14,15 +14,26 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
+"""A postprocessor that tensorize related components."""
 
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from tvm._ffi.registry import register_object
+
+from .. import _ffi_api
+from .postproc import Postproc
+
+
+@register_object("meta_schedule.RewriteTensorize")
+class RewriteTensorize(Postproc):
+    """A postprocessor that applies tensorization to annotated blocks.
+
+    Parameters
+    ----------
+    vectorize_init_loop : bool
+       Whether or not vectorize the initialization loop produced by DecomposeReduction
+    """
+
+    def __init__(self, vectorize_init_loop=False) -> None:
+        self.__init_handle_by_constructor__(
+            _ffi_api.PostprocRewriteTensorize,  # type: ignore # pylint: disable=no-member
+            vectorize_init_loop,
+        )

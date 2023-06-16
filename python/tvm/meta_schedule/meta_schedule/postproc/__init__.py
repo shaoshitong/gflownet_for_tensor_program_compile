@@ -14,15 +14,15 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+"""The tvm.meta_schedule.postproc package."""
+from .disallow_async_strided_mem_copy import DisallowAsyncStridedMemCopy
+from .disallow_dynamic_loop import DisallowDynamicLoop
+from .postproc import Postproc, PyPostproc
+from .rewrite_cooperative_fetch import RewriteCooperativeFetch
+from .rewrite_layout import RewriteLayout
+from .rewrite_parallel_vectorize_unroll import RewriteParallelVectorizeUnroll
+from .rewrite_reduction_block import RewriteReductionBlock
+from .rewrite_tensorize import RewriteTensorize
+from .rewrite_unbound_block import RewriteUnboundBlock
+from .verify_gpu_code import VerifyGPUCode
+from .verify_vtcm_limit import VerifyVTCMLimit

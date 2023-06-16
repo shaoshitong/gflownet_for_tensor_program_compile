@@ -191,7 +191,7 @@ class SearchStrategy(Object):
     ) -> "SearchStrategy":
         """Create a search strategy."""
         from . import (  # pylint: disable=import-outside-toplevel
-            EvolutionarySearch, ReplayFunc, ReplayTrace,GflowNetSearch)
+            EvolutionarySearch, ReplayFunc, ReplayTrace,GflowNetStrategy)
 
         if kind == "evolutionary":
             return EvolutionarySearch(*args, **kwargs)
@@ -200,7 +200,7 @@ class SearchStrategy(Object):
         if kind == "replay-func":
             return ReplayFunc(*args, **kwargs)  # type: ignore
         if kind == "gflownet":
-            return GflowNetSearch(*args, **kwargs)  # type: ignore
+            return GflowNetStrategy(*args, **kwargs)  # type: ignore
         raise ValueError(f"Unknown SearchStrategy: {kind}")
 
 

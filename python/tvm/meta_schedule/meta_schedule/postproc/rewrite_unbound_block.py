@@ -14,15 +14,20 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
+"""A postprocessor that adds thread binding to unbound blocks"""
 
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from tvm._ffi.registry import register_object
+
+from .. import _ffi_api
+from .postproc import Postproc
+
+
+@register_object("meta_schedule.RewriteUnboundBlock")
+class RewriteUnboundBlock(Postproc):
+    """A postprocessor that adds thread binding to unbound blocks"""
+
+    def __init__(self, max_threadblocks: int = 256) -> None:
+        self.__init_handle_by_constructor__(
+            _ffi_api.PostprocRewriteUnboundBlock,  # type: ignore # pylint: disable=no-member
+            max_threadblocks,
+        )

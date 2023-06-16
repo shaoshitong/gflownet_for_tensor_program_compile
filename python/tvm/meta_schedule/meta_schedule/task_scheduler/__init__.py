@@ -15,14 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.task_scheduler package.
+Meta Schedule task scheduler that manage the task scheduling
+for measure candidates generation and measurement, then save
+records to the database.
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .allpython_based import AllPythonBased
+from .gradient_based import GradientBased
+from .round_robin import RoundRobin
+from .task_scheduler import PyTaskScheduler, TaskScheduler, create

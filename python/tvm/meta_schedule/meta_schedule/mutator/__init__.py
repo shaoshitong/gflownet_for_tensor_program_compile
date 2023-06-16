@@ -15,14 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.mutator package.
+Meta Schedule mutator that mutates the trace to explore the
+design space.
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .mutate_compute_location import MutateComputeLocation
+from .mutate_parallel import MutateParallel
+from .mutate_thread_binding import MutateThreadBinding
+from .mutate_tile_size import MutateTileSize
+from .mutate_unroll import MutateUnroll
+from .mutator import Mutator, PyMutator

@@ -15,14 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.database package.
+The database that stores serialized tuning records and workloads
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .database import Database, PyDatabase, TuningRecord, Workload, create
+from .json_database import JSONDatabase
+from .memory_database import MemoryDatabase
+from .ordered_union_database import OrderedUnionDatabase
+from .schedule_fn_database import ScheduleFnDatabase
+from .union_database import UnionDatabase

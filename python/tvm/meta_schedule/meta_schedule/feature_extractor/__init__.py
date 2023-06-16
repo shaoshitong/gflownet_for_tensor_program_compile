@@ -15,14 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
+The tvm.meta_schedule.feature_extractor package.
+Meta Schedule feature extractors that extracts features from
+measure candidates for use in cost model.
 """
-
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .feature_extractor import FeatureExtractor, PyFeatureExtractor
+from .per_store_feature import PerStoreFeature
+from .random_feature_extractor import RandomFeatureExtractor

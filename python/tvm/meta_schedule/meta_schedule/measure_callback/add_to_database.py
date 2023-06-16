@@ -14,15 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-The tvm.meta_schedule.search_strategy package.
-Meta Schedule search strategy utilizes the design spaces given
-to generate measure candidates.
-"""
+"""A callback that adds the measurement results into the database"""
+from tvm._ffi import register_object
 
-from .evolutionary_search import EvolutionarySearch
-from .replay_func import ReplayFunc
-from .replay_trace import ReplayTrace
-from .gflownet_search import GflowNetSearch
-from .search_strategy import (MeasureCandidate, PySearchStrategy,
-                              SearchStrategy, create)
+from .. import _ffi_api
+from .measure_callback import MeasureCallback
+
+
+@register_object("meta_schedule.AddToDatabase")
+class AddToDatabase(MeasureCallback):
+    def __init__(self) -> None:
+        """A callback that adds the measurement results into the database"""
+        self.__init_handle_by_constructor__(
+            _ffi_api.MeasureCallbackAddToDatabase,  # type: ignore # pylint: disable=no-member
+        )
