@@ -1,53 +1,67 @@
 
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set, Union
+
 import tvm
-from typing import TYPE_CHECKING, Callable, List, Optional, Union,Dict,Set
 
 # isort: off
 from typing_extensions import Literal
-
 # isort: on
+import copy
+import multiprocessing
+from multiprocessing import Value
+import tvm
+import copy
 from tvm._ffi import register_object
 from tvm.runtime import Object
-from tvm.tir.schedule import Schedule,Trace
-import tvm
+from tvm.tir.schedule import Schedule, Trace
+
 from .. import _ffi_api
 from ..arg_info import ArgInfo
-from ..runner import RunnerResult
-from ..utils import cpu_count, derived_object, get_global_func_with_default_on_worker
 from ..cost_model import CostModel
 from ..database import Database
-from ..tune_context import TuneContext
-from .search_strategy import PySearchStrategy,SearchStrategy,MeasureCandidate
+from ..gflownet_utils.concurrentbitmask import ConcurrentBitmask
 from ..gflownet_utils.heatmap import SizedHeap
+from ..gflownet_utils.irmoduleset import IRModuleSet
+from ..module_equality import E, ModuleEquality
 from ..profiler import Profiler
-import copy
-from multiprocessing import Value
-import multiprocessing
+from ..runner import RunnerResult
+from ..tune_context import TuneContext
+from ..utils import (cpu_count, derived_object,
+                     get_global_func_with_default_on_worker)
+from .search_strategy import MeasureCandidate, PySearchStrategy, SearchStrategy
 
-#zhangchunlei
-from tvm._ffi import register_object
+"""
+How to use it ?
 
-from .. import _ffi_api
-from .search_strategy import SearchStrategy
-from .search_strategy import _PySearchStrategy
-from ..space_generator.space_generator import SpaceGenerator
-from ...tir.schedule import Trace
-from tvm.ir import IRModule
-from tvm.tir.schedule import Schedule
-from ..database.database import Workload
-from .. import Profiler
-from .. import utils
-from ..postproc import Postproc
-import numpy as np
+sm = ModuleEquality("structural")
+sm.equal(mod, mod)
+sm.hash(mod)
+
+"""
+
 import random
 from collections import defaultdict
 from dataclasses import dataclass
 
+import numpy as np
+
+#zhangchunlei
+from tvm._ffi import register_object
+from tvm.ir import IRModule
+from tvm.tir.schedule import Schedule
+
+from ...tir.schedule import Trace
+from .. import Profiler, _ffi_api, utils
+from ..database.database import Workload
+from ..postproc import Postproc
+from ..space_generator.space_generator import SpaceGenerator
+from .search_strategy import SearchStrategy, _PySearchStrategy
+
 if TYPE_CHECKING:
     from ..cost_model import CostModel
     from ..database import Database
-    from ..tune_context import TuneContext
     from ..mutator import Mutator
+    from ..tune_context import TuneContext
 
 def forkseed(rand_state):
     rand_state = int(rand_state)
@@ -86,51 +100,11 @@ def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
         measure_inputs.append(MeasureCandidate(sch,args_info=ArgInfo.from_entry_func(sch.mod(), remove_preproc= True)))
     return measure_inputs
 
-# class Item:
-#     def __init__(self,postproc) -> None:
-#         self.postproc = postproc
-#         self.fail_counter = Value('i', 0)
-        
-class ModuleEquality:
-    def __init__(self) -> None:
-        pass
+def list_swap(list1, list2):
+    list1[:], list2[:] = list2[:], list1[:]
 
-class ModuleEquality:
-    def __init__(self) -> None:
-        pass
-    def Equal(lhs:IRModule, rhs:IRModule):
-        return True
-#需要实现   
-class IRModuleSet:
-    
-    class Item:
-        mod_:IRModule
-        shash_:int
-        def __init__(self,mod:IRModule, shash:int) -> None:
-            self.mod_ = mod
-            self.shash_ = shash
-        def __hash__(self) -> int:
-            return self.shash_
-        def __eq__(self, __value) -> bool:
-            if isinstance(__value, IRModuleSet.Item):
-                return self.shash_ == __value.shash_ and IRModuleSet.mod_eq_.Equal(self.mod_, __value.mod_)
-            else:
-                return False
-            
-    
-    def __init__(self,mod_eq:ModuleEquality) -> None:
-        self.tab_ : set[IRModuleSet.Item]= {}
-        self.mod_eq_ :ModuleEquality = mod_eq
-        
-    def Add(self,mod: IRModule, shash:int):
-        item = self.Item(mod,shash)
-        self.tab_.add(item)
-    def Has(self,mod:IRModule, shash:int):
-        item = self.Item(mod,shash)
-        return item in self.tab_
-        
 
-@register_object("meta_schedule.PerThreadData")  
+"""Need to implement"""
 class PerThreadData:
     #auxiliary class for MyEvolutionarySearch
     mod :IRModule
@@ -139,30 +113,72 @@ class PerThreadData:
     mutator_sampler : Callable[[Optional[Mutator]], None] 
     
     def __init__(self) -> None:
-        mod = None
-        rand_state = np.int64(-1)
-        trace_sampler = None
-        mutatot_sampler = None
+        self.mod = None
+        self.rand_state = np.int64(-1)
+        self.trace_sampler = None
+        self.mutatot_sampler = None
     
-    def Set(scores: List[float], genetic_mutate_prob:float, mutator_probs:Dict[Mutator, float]):
-        _ffi_api.EvolutionarySearchPerThreadDataSet(
-        scores,
-        genetic_mutate_prob,
-        mutator_probs,
-        )
+    def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs:Dict[Mutator, float]):
+        from tvm import tir
+        tir.multiply
+
+    
+    @staticmethod
+    def default_trace_sampler(rand_state,weights,sum_type = "softmax"):
+        np.random.seed(rand_state)
+        if not isinstance(weights,np.ndarray):
+            weights = np.array(weights)
+
+        if sum_type == "linear":
+            if weights.min() < 0:
+                weights = weights - weights.min()
+                weights = weights/np.sum(weights)
+        elif sum_type == "softmax":
+            weights = np.exp(weights - weights.min())/np.exp(weights - weights.min()).sum()
+        else:
+            raise NotImplementedError
         
-    def MakeMutatorSampler(genetic_mutate_prob:float, mutator_probs:Dict[Mutator,float],rand_state:np.int64):
-        _ffi_api.MakeMutatorSampler(
-            genetic_mutate_prob,
-            mutator_probs,
-            rand_state,
-        )        
+        idx = np.random.choice(weights.shape[0],1,p=weights).item()
+        return idx
+    
+    @staticmethod
+    def default_mutatot_sampler(genetic_mutate_prob,mutator_probs,rand_state):
+        np.random.seed(rand_state)
+        mutators = []
+        mutators.append(None)
+        masses = []
+        masses.append(1 - genetic_mutate_prob)
+        total_mass_mutator = 0
+        if genetic_mutate_prob>0:
+            for mutator,mass in mutator_probs:
+                total_mass_mutator += mass
+                mutators.append(mutator)
+                masses.append(mass*genetic_mutate_prob)
+        if (total_mass_mutator == 0.0):
+            masses[0] = 1.0
+            for i in range(1,len(masses)):
+                masses[i] = 0.0
+        elif (total_mass_mutator != 1.0):
+            for i in range(1,len(masses)):
+                masses[i]/=total_mass_mutator
         
+        return PerThreadData.default_trace_sampler(rand_state,masses)
+        
+
         
 class ThreadedTraceApply:
+
+
+    class Item:
+        postproc = None
+        fail_counter = 0
+
+        def __init__(self,postporc) -> None:
+            self.postproc = postporc
+    
     def __init__(self,postprocs) -> None:
         self.n_ = len(postprocs)
-        self.items_ = [Item(postprocs[i]) for i in range(self.n_)]
+        self.items_ = [self.Item(postprocs[i]) for i in range(self.n_)]
 
     def Apply(self,mod,trace,rand_state):
         sch = Schedule(mod,
@@ -235,7 +251,7 @@ class State:
     token_: Workload
         The token registered for the given workload in database.
     """
-    def __init__(self, context, searchstrategy, max_trials, num_trials_per_iter, design_space_schedules, database, cost_model) -> None:
+    def __init__(self, context, searchstrategy, max_trials, num_trials_per_iter, design_space_schedules, database, cost_model, model_equality = "structural") -> None:
         self.context = context
         self.searchstrategy = searchstrategy
         self.max_trials = max_trials
@@ -243,6 +259,7 @@ class State:
         self.design_space_schedules = design_space_schedules
         self.database_ = database
         self.cost_model_ = cost_model
+        self.model_equality = ModuleEquality(model_equality)
         self.st = 0
         self.ed = 0
         self.num_empty_iters = 0
@@ -251,11 +268,27 @@ class State:
         for space in self.design_space_schedules:
             self.design_spaces.append(space.trace.trace.simplified(True))
         self.mod = context.mod
-        self.per_thread_data_ = []
+        self.per_thread_data_ = [PerThreadData() for i in range(self.context.num_threads)]
         for i in range(self.context.num_threads):
             self.per_thread_data_[i].mod = copy.deepcopy(self.mod)
             self.per_thread_data_[i].rand_state = forkseed(self.sraechstrategy.rand_state_)
         self.token_ = database.commit_workload(self.mod)
+
+
+    def reset(self):
+        self.st = 0
+        self.ed = 0
+        self.num_empty_iters = 0
+        self.measured_workloads_:IRModuleSet = None
+        self.design_spaces = []
+        for space in self.design_space_schedules:
+            self.design_spaces.append(space.trace.trace.simplified(True))
+        self.mod = self.context.mod
+        self.per_thread_data_ = [PerThreadData() for i in range(self.context.num_threads)]
+        for i in range(self.context.num_threads):
+            self.per_thread_data_[i].mod = copy.deepcopy(self.mod)
+            self.per_thread_data_[i].rand_state = forkseed(self.sraechstrategy.rand_state_)
+        self.token_ = self.database_.commit_workload(self.mod)
 
     def pickbestfromdatabase(self,num) -> List[Schedule]:
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
@@ -293,8 +326,7 @@ class State:
         fail_count = 0
         while(len(out_schs) < self.searchstrategy.init_min_unmeasured and fail_count < self.sraechstrategy.max_fail_count):
             results = [None]*num
-            def f_proc_unmeasured(thread_id:int, trace_id:int):
-                data:PerThreadData                          
+            def f_proc_unmeasured(thread_id:int, trace_id:int):               
                 data = self.per_thread_data_[thread_id]     
                 rand_state = data.rand_state
                 mod = data.mod
@@ -315,14 +347,10 @@ class State:
             fail_count += not found_new
             self.context.logger.info('Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
         return out_schs
+
     
-    def EvolveWithCostModel(population,num):
-        pass
-    
-    
-    def ModuleHash(self,mod: IRModule)->int:
-        #取决于 ModuleEquality的实现
-        pass
+    def ModuleHash(self, mod: IRModule)->int:
+        return self.model_equality.hash(mod)
     
     def PickWithEpsGreedy(self, unmeasured:List[Schedule], bests:List[Schedule], num:int)->List[Schedule]:
         """
@@ -413,154 +441,90 @@ class State:
         
     def EvolveWithCostModel(self,population,num):
         self.database_:Database
+        exists = IRModuleSet(self.model_equality)
         with Profiler.timeit("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads"):
             assert num > 0, "num should be positive"
             exists = self.sraechstrategy.measured_workloads_
         iter = 0
-        while True:
+        while True: 
             scores = PredictNormalizedScore(population,self.context,self.cost_model_)
             with Profiler.timeit("EvoSearch/Evolve/Misc"):
                 assert len(scores) == len(population), "scores and population should have same length"
                 # The heap to record best schedule, we do not consider schedules that are already measured
                 heap = SizedHeap(num)
                 for i in range(len(population)):
-                    if scores[i] is not None and not exists.count(population[i].workload_key):
-                        heap.push((scores[i],population[i]))
-                if len(heap) == 0:
-                    self.num_empty_iters += 1
-                    if self.num_empty_iters > self.sraechstrategy.max_empty_iters:
-                        break
-                    continue
-                self.num_empty_iters = 0
-                population = []
-                for i in range(self.num_trials_per_iter):
-                    if len(heap) == 0:
-                        break
-                    population.append(heap.pop()[1])
-                if len(population) == 0:
+                    sch = population[i]
+                    mod = sch.mod
+                    shash = self.ModuleHash(mod)
+                    score = scores[i]
+                    if exists.Has(mod,shash) == False:
+                        exists.Add(mod,shash)
+                        heap.push((score,sch))
+                if iter == self.searchstrategy.genetic_num_iters:
                     break
+                for data in self.per_thread_data_:
+                    data.Set(scores,self.searchstrategy.genertic_mutate_prob,self.searchstrategy.mutator_probs_)
             
+
+            with Profiler.timeit("EvoSearch/Evolve/Mutation"):
+                pp = ThreadedTraceApply(self.postprocs_)
+                cbmask = ConcurrentBitmask(self.population_size)
+                next_population = [None]*self.population_size
+
+                def f_find_candidate(thread_id,trace_id):
+                    data = self.per_thread_data_[thread_id]
+                    rand_state = data.rand_state
+                    mod = data.mod
+                    trace_sampler = data.trace_sampler
+                    mutator_sampler = data.mutator_sampler
+                    result = next_population[trace_id]
+                    sampled_trace_id = -1
+                    for fail_count in range(self.searchstrategy.genetic_max_fail_count):
+                        sampled_trace_id = trace_sampler()
+                        trace = population[sampled_trace_id].trace
+                        opt_mutator = mutator_sampler()
+                        if opt_mutator:
+                            mutator = opt_mutator.value
+                            new_trace = mutator.Apply(trace,rand_state)
+                            result = sch = pp.Apply(mod,new_trace,rand_state)
+                            break
+                    if result is None:
+                        result = population[sampled_trace_id]
+                    next_population[trace_id] = result
+
+                pool = multiprocessing.Pool(processes=self.context.num_threads)
+                pool.map(f_find_candidate, 0, self.searchstrategy.population_size)
+                pool.close()
+                pool.join()
+                list_swap(population,next_population)
+
             iter+=1
-            pass
+        with Profiler.timeit("EvoSearch/Evolve/Misc"):
+            # Return the best states from the heap, sorting from higher score to lower ones
+            results = []
+            for item in heap.heap[::-1]:
+                results.append(item.sch)
+        
+        # output the tuning log
+        kNumScoresPerLine = 16
+        output_str = ""
+        for st in range(0,len(heap.heap),kNumScoresPerLine):
+            output_str += "\n"
+            ed = min(st + kNumScoresPerLine,len(heap.heap))
+            self.context.logger.info("[%d : %d]:\t",st + 1,ed)
+            output_str += f"[{int(st+1)} : {int(ed)}]:\t"
+            for i in range(st,ed):
+                if i != st:
+                    self.context.logger.info(" ")
+                    output_str += " "
+                self.context.logger.info("%g",heap.heap[i].score)
+                output_str += f"{round(heap.heap[i].score,4)}"
+            self.context.logger.info("\n")
+            output_str += "\n"
 
-        """
-std::vector<Schedule> EvolutionarySearchNode::State::EvolveWithCostModel(
-    std::vector<Schedule> population, int num) {
-  IRModuleSet exists(database_->GetModuleEquality());
-  {
-    auto _ = Profiler::TimedScope("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads");
-    ICHECK_GT(num, 0);
-    // The heap to record best schedule, we do not consider schedules that are already measured
-    exists = this->measured_workloads_;
-  }
-  SizedHeap heap(num);
-  for (int iter = 0;; ++iter) {
-    // Predict normalized score with the cost model,
-    std::vector<double> scores =
-        PredictNormalizedScore(population, GetRef<TuneContext>(self->ctx_), this->cost_model_);
-
-    {
-      auto _ = Profiler::TimedScope("EvoSearch/Evolve/Misc");
-      ICHECK_EQ(scores.size(), population.size());
-      for (int i = 0, n = population.size(); i < n; ++i) {
-        Schedule sch = population.at(i);
-        IRModule mod = sch->mod();
-        size_t shash = ModuleHash(mod);
-        double score = scores.at(i);
-        if (!exists.Has(mod, shash)) {
-          exists.Add(mod, shash);
-          heap.Push(sch, score);
-        }
-      }
-      // Discontinue once it reaches end of search
-      if (iter == self->genetic_num_iters) {
-        break;
-      }
-      // Set threaded samplers, with probability from predicated normalized throughput
-      for (PerThreadData& data : this->per_thread_data_) {
-        data.Set(scores, self->genetic_mutate_prob, self->mutator_probs_);
-      }
-    }
-    {
-      auto _ = Profiler::TimedScope("EvoSearch/Evolve/Mutation");
-      ThreadedTraceApply pp(self->postprocs_);
-      ConcurrentBitmask cbmask(self->population_size);
-      std::vector<Schedule> next_population(self->population_size, Schedule{nullptr});
-      // The worker function
-      auto f_find_candidate = [&cbmask, &population, &next_population, &pp, this](int thread_id,
-                                                                                  int trace_id) {
-        // Prepare samplers
-        PerThreadData& data = this->per_thread_data_.at(thread_id);
-        TRandState* rand_state = &data.rand_state;
-        const IRModule& mod = data.mod;
-        std::function<int()>& trace_sampler = data.trace_sampler;
-        std::function<Optional<Mutator>()>& mutator_sampler = data.mutator_sampler;
-        Schedule& result = next_population.at(trace_id);
-        int sampled_trace_id = -1;
-        // Loop until success
-        for (int fail_count = 0; fail_count <= self->genetic_max_fail_count; ++fail_count) {
-          sampled_trace_id = trace_sampler();
-          tir::Trace trace = population.at(sampled_trace_id)->trace().value();
-          if (Optional<Mutator> opt_mutator = mutator_sampler()) {
-            // Decision: mutate
-            Mutator mutator = opt_mutator.value();
-            if (Optional<tir::Trace> new_trace = mutator->Apply(trace, rand_state)) {
-              if (Optional<Schedule> sch = pp.Apply(mod, new_trace.value(), rand_state)) {
-                // note that sch's trace is different from new_trace
-                // because it contains post-processing information
-                result = sch.value();
-                break;
-              }
-            }
-          } else if (cbmask.QueryAndMark(sampled_trace_id)) {
-            // Decision: do not mutate
-            break;
-          }
-        }
-        // if retry count exceeds the limit, reuse an old sample
-        if (!result.defined()) {
-          result = population.at(sampled_trace_id);
-        }
-      };
-      support::parallel_for_dynamic(0, self->population_size, self->ctx_->num_threads,
-                                    f_find_candidate);
-
-      population.swap(next_population);
-      TVM_PY_LOG(INFO, self->ctx_->logger) << "Evolve iter #" << iter << " done. Summary:\n"
-                                           << pp.SummarizeFailures();
-    }
-  }
-  // Return the best states from the heap, sorting from higher score to lower ones
-  {
-    auto _ = Profiler::TimedScope("EvoSearch/Evolve/Misc");
-    std::sort(heap.heap.begin(), heap.heap.end());
-    std::vector<Schedule> results;
-    results.reserve(num);
-    for (const SizedHeap::Item& item : heap.heap) {
-      results.push_back(item.sch);
-    }
-
-    constexpr int kNumScoresPerLine = 16;
-    std::ostringstream os;
-    int n = heap.heap.size();
-    for (int st = 0; st < n; st += kNumScoresPerLine) {
-      os << std::endl;
-      int ed = std::min(st + kNumScoresPerLine, n);
-      os << "[" << (st + 1) << " : " << ed << "]:\t";
-      for (int i = st; i < ed; ++i) {
-        if (i != st) {
-          os << "  ";
-        }
-        os << std::fixed << std::setprecision(4) << heap.heap.at(i).score;
-      }
-    }
-    TVM_PY_LOG(INFO, self->ctx_->logger)
-        << "Scores of the best " << n << " candidates:" << os.str();
-    return results;
-  }
-}
-        """
-
+        print(f"Scores of the best {len(heap.heap)} schedules:",output_str)
+        return results
+  
 
 @derived_object
 class OurPySearchStrategy(PySearchStrategy):
@@ -580,6 +544,7 @@ class OurPySearchStrategy(PySearchStrategy):
     def __init__(
         self,
         *,
+        context,
         population_size = 512,
         init_measured_ratio = 0.2,
         init_min_unmeasured = 50,
@@ -588,6 +553,9 @@ class OurPySearchStrategy(PySearchStrategy):
         genetic_mutate_prob = 0.85,
         genetic_max_fail_count = 10,
         eps_greedy = 0.05)-> None:
+
+        assert context is not None,"context should not be None! It contains necessary information!"
+        self.context = context
         self.population_size = population_size
         self.init_measured_ratio = init_measured_ratio
         self.init_min_unmeasured = init_min_unmeasured
@@ -601,17 +569,18 @@ class OurPySearchStrategy(PySearchStrategy):
         check_probability(self.init_measured_ratio)
         check_probability(self.genetic_mutate_prob)
         check_probability(self.eps_greedy)
-    
-    def _initialize_with_tune_context(self, context: "TuneContext") -> None:
-        """Initialize the search strategy with tuning context.
 
-        Parameters
-        ----------
-        context : TuneContext
-            The tuning context for initialization.
-        """
-        initialize_with_tuneconext = tvm.get_global_func("meta_schedule.SearchStrategyInitializeWithTuneContext")
-        return initialize_with_tuneconext(self,context)
+    
+    def initialize_with_tune_context(self, context: "TuneContext") -> None:
+        assert context.num_threads > 0, "ValueError: `TuneContext.num_threads` must be > 0"
+        assert self.context.space_generator is not None, "ValueError: `TuneContext.space_generator` must be defined"
+        assert self.context.space_generator.postprocs is not None, "ValueError: `TuneContext.space_generator.postprocs` must be defined"
+        assert self.context.space_generator.mutator_probs is not None, "ValueError: `TuneContext.space_generator.mutator_probs` must be defined"
+        self.context = context
+        self.postprocs = context.space_generator.postprocs
+        self.mutator_probs = context.space_generator.mutator_probs
+        self.rand_state = forkseed(context.rand_state)
+        self.state = None
 
     def pre_tuning(
         self,
@@ -628,13 +597,15 @@ class OurPySearchStrategy(PySearchStrategy):
         design_spaces : List[Schedule]
             The design spaces for pre-tuning.
         """
-        pre_tuning = tvm.get_global_func("meta_schedule.SearchStrategyPreTuning")
-        return pre_tuning(self,max_trials,num_trials_per_iter,design_spaces,database,cost_model)
+        assert design_spaces is not None, "Design space should not be None!"
+        assert database is not None, "Context should not be None!"
+        assert cost_model is not None, "Cost Model should not be None!"
+        assert self.state is None, "ValueError: `PreTuning` is already invoked without corresponding `PostTuning`."
+        self.state = State(self.context,self,max_trials,num_trials_per_iter,design_spaces,database,cost_model)
 
     def post_tuning(self) -> None:
         """Post-tuning for the search strategy."""
-        post_tuning = tvm.get_global_func("meta_schedule.SearchStrategyPostTuning")
-        return post_tuning(self)
+        self.state = None
 
     def generate_measure_candidates(self) -> Optional[List[MeasureCandidate]]:
         """Generate measure candidates from design spaces for measurement.
@@ -644,6 +615,8 @@ class OurPySearchStrategy(PySearchStrategy):
         measure_candidates : Optional[List[IRModule]]
             The measure candidates generated, None if finished.
         """
+        return self.state.GenerateMeasureCandidates()
+
 
     def notify_runner_results(
         self,
@@ -659,8 +632,7 @@ class OurPySearchStrategy(PySearchStrategy):
         results : List[RunnerResult]
             The profiling results from the runner.
         """
-        notify_runner_results = tvm.get_global_func("meta_schedule.SearchStrategyNotifyRunnerResults")
-        return notify_runner_results(self,measure_candidates,results)
+        self.state.NotifyRunnerResults(measure_candidates, results)
 
     def clone(self) -> SearchStrategy:
         """Clone the search strategy.
@@ -670,5 +642,6 @@ class OurPySearchStrategy(PySearchStrategy):
         strategy : SearchStrategy
             The cloned search strategy.
         """
-        clone = tvm.get_global_func("meta_schedule.SearchStrategyClone")
-        return clone(self)
+        copy_self = copy.deepcopy(self)
+        copy_self.state = None
+        return copy_self

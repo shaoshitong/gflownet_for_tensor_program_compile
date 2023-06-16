@@ -24,14 +24,17 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Union
 from typing_extensions import Literal
 
 # isort: on
+import tvm
 from tvm._ffi import register_object
 from tvm.runtime import Object
 from tvm.tir.schedule import Schedule
-import tvm
+
 from .. import _ffi_api
 from ..arg_info import ArgInfo
 from ..runner import RunnerResult
-from ..utils import cpu_count, derived_object, get_global_func_with_default_on_worker
+from ..utils import (cpu_count, derived_object,
+                     get_global_func_with_default_on_worker)
+
 if TYPE_CHECKING:
     from ..cost_model import CostModel
     from ..database import Database
@@ -84,6 +87,7 @@ class SearchStrategy(Object):
             "replay-func",
             "replay-trace",
             "evolutionary",
+            "gflownet"
         ],
     ]
 
@@ -181,16 +185,13 @@ class SearchStrategy(Object):
             "evolutionary",
             "replay-trace",
             "replay-func",
-        ] = "evolutionary",
+        ] = "gflownet",
         *args,
         **kwargs,
     ) -> "SearchStrategy":
         """Create a search strategy."""
         from . import (  # pylint: disable=import-outside-toplevel
-            EvolutionarySearch,
-            ReplayFunc,
-            ReplayTrace,
-        )
+            EvolutionarySearch, ReplayFunc, ReplayTrace,GflowNetStrategy)
 
         if kind == "evolutionary":
             return EvolutionarySearch(*args, **kwargs)
@@ -198,6 +199,8 @@ class SearchStrategy(Object):
             return ReplayTrace(*args, **kwargs)
         if kind == "replay-func":
             return ReplayFunc(*args, **kwargs)  # type: ignore
+        if kind == "gflownet":
+            return GflowNetStrategy(*args, **kwargs)  # type: ignore
         raise ValueError(f"Unknown SearchStrategy: {kind}")
 
 
