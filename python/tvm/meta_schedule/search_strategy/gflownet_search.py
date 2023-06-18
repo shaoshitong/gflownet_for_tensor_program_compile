@@ -24,6 +24,7 @@ from ..gflownet_utils.irmoduleset import IRModuleSet
 from ..module_equality import ModuleEquality
 from ..profiler import Profiler
 from ..runner import RunnerResult
+from ..logging import get_logger, get_logging_func
 from ..tune_context import TuneContext
 from ..utils import (cpu_count, derived_object,
                      get_global_func_with_default_on_worker)
@@ -61,6 +62,12 @@ if TYPE_CHECKING:
     from ..database import Database
     from ..mutator import Mutator
     from ..tune_context import TuneContext
+
+import inspect
+
+def current_line_number():
+    return inspect.currentframe().f_back.f_lineno
+
 
 def forkseed(rand_state):
     rand_state = int(rand_state)
@@ -260,17 +267,18 @@ class State:
         self.cost_model_ = cost_model
         self.model_equality = ModuleEquality(model_equality)
         self.st = 0
-        self.ed = 0
+        self.ed = num_trials_per_iter
         self.num_empty_iters = 0
+        self.logger = get_logging_func(get_logger(__name__))
         self.measured_workloads_:IRModuleSet = None
         self.design_spaces = []
         for space in self.design_space_schedules:
-            self.design_spaces.append(space.trace.trace.simplified(True))
+            self.design_spaces.append(space.trace.simplified(True))
         self.mod = context.mod
         self.per_thread_data_ = [PerThreadData() for i in range(self.context.num_threads)]
         for i in range(self.context.num_threads):
             self.per_thread_data_[i].mod = copy.deepcopy(self.mod)
-            self.per_thread_data_[i].rand_state = forkseed(self.sraechstrategy.rand_state_)
+            self.per_thread_data_[i].rand_state = forkseed(self.searchstrategy.rand_state)
         self.token_ = database.commit_workload(self.mod)
 
 
@@ -281,12 +289,12 @@ class State:
         self.measured_workloads_:IRModuleSet = None
         self.design_spaces = []
         for space in self.design_space_schedules:
-            self.design_spaces.append(space.trace.trace.simplified(True))
+            self.design_spaces.append(space.trace.simplified(True))
         self.mod = self.context.mod
         self.per_thread_data_ = [PerThreadData() for i in range(self.context.num_threads)]
         for i in range(self.context.num_threads):
             self.per_thread_data_[i].mod = copy.deepcopy(self.mod)
-            self.per_thread_data_[i].rand_state = forkseed(self.sraechstrategy.rand_state_)
+            self.per_thread_data_[i].rand_state = forkseed(self.searchstrategy.rand_state)
         self.token_ = self.database_.commit_workload(self.mod)
 
     def pickbestfromdatabase(self,num) -> List[Schedule]:
@@ -343,7 +351,7 @@ class State:
                     found_new = True
                     out_schs.append(results[i])
             fail_count += not found_new
-            self.context.logger.info('Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
+            self.logger(1,__name__,current_line_number(), 'Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
         return out_schs
 
     
@@ -412,20 +420,20 @@ class State:
         inits : List[Schedule]
         inits = [None]*pop
         
-        self.context.logger.info("Generating candidates......")
+        self.logger(1,__name__,current_line_number(),"Generating candidates......")
         measured = self.pickbestfromdatabase(pop*self.searchstrategy.init_measured_ratio)
-        self.context.logger.info("Picked top %s candidate(s) from database",len(measured))
+        self.logger(1,__name__,current_line_number(),"Picked top %s candidate(s) from database",len(measured))
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
-            self.context.logger.warning("Cannot sample enough initial population, evolutionary search failed.")
+            self.logger(2,__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
-        self.context.logger.info("Sample %s candidate(s)",len(unmeasured))
+        self.logger(1,__name__,current_line_number(),"Sample %s candidate(s)",len(unmeasured))
         inits.extend(measured)
         inits.extend(unmeasured)
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num)
-        self.context.logger.info("Got %s candidate(s) with evolutionary search",len(bests))
+        self.logger(1,__name__,current_line_number(),"Got %s candidate(s) with evolutionary search",len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
-        self.context.logger.info("Sendding %s candidates(s) for measurement",len(picks))
+        self.logger(1,__name__,current_line_number(),"Sendding %s candidates(s) for measurement",len(picks))
         #判断是否为空，这里有一个空迭代容忍数量
         if(picks is None):
             self.num_empty_iters+=1
@@ -508,15 +516,15 @@ class State:
         for st in range(0,len(heap.heap),kNumScoresPerLine):
             output_str += "\n"
             ed = min(st + kNumScoresPerLine,len(heap.heap))
-            self.context.logger.info("[%d : %d]:\t",st + 1,ed)
+            self.logger(1,__name__,current_line_number(),"[%d : %d]:\t",st + 1,ed)
             output_str += f"[{int(st+1)} : {int(ed)}]:\t"
             for i in range(st,ed):
                 if i != st:
-                    self.context.logger.info(" ")
+                    self.logger(1,__name__,current_line_number()," ")
                     output_str += " "
-                self.context.logger.info("%g",heap.heap[i].score)
+                self.logger(1,__name__,current_line_number(),"%g",heap.heap[i].score)
                 output_str += f"{round(heap.heap[i].score,4)}"
-            self.context.logger.info("\n")
+            self.logger(1,__name__,current_line_number(),"\n")
             output_str += "\n"
 
         print(f"Scores of the best {len(heap.heap)} schedules:",output_str)
@@ -568,7 +576,7 @@ class GflowNetSearch(PySearchStrategy):
         check_probability(self.eps_greedy)
 
     
-    def initialize_with_tune_context(self, context: "TuneContext") -> None:
+    def _initialize_with_tune_context(self, context: "TuneContext") -> None:
         assert context.num_threads > 0, "ValueError: `TuneContext.num_threads` must be > 0"
         assert self.context.space_generator is not None, "ValueError: `TuneContext.space_generator` must be defined"
         assert self.context.space_generator.postprocs is not None, "ValueError: `TuneContext.space_generator.postprocs` must be defined"
@@ -639,6 +647,13 @@ class GflowNetSearch(PySearchStrategy):
         strategy : SearchStrategy
             The cloned search strategy.
         """
-        copy_self = copy.deepcopy(self)
-        copy_self.state = None
+        copy_self = GflowNetSearch(context=self.context,
+                                population_size=self.population_size,
+                                init_measured_ratio=self.init_measured_ratio,
+                                init_min_unmeasured=self.init_min_unmeasured,
+                                max_fail_count=self.max_fail_count,
+                                genetic_num_iters=self.genetic_num_iters,
+                                genetic_mutate_prob=self.genetic_mutate_prob,
+                                genetic_max_fail_count=self.genetic_max_fail_count,
+                                eps_greedy=self.eps_greedy)
         return copy_self
