@@ -25,6 +25,7 @@ from ..module_equality import ModuleEquality
 from ..profiler import Profiler
 from ..runner import RunnerResult
 from ..logging import get_logger, get_logging_func
+import logging
 from ..tune_context import TuneContext
 from ..utils import (cpu_count, derived_object,
                      get_global_func_with_default_on_worker)
@@ -281,6 +282,7 @@ class State:
             self.per_thread_data_[i].rand_state = forkseed(self.searchstrategy.rand_state)
         self.token_ = database.commit_workload(self.mod)
 
+        self.logger_key =[logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR]
 
     def reset(self):
         self.st = 0
@@ -298,13 +300,14 @@ class State:
         self.token_ = self.database_.commit_workload(self.mod)
 
     def pickbestfromdatabase(self,num) -> List[Schedule]:
+        num = int(num)
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
-        top_records = self.database_.get_top_k(self.token_, num)
+        top_records = self.database_.get_top_k(self.token_, num) # TODO: ERROR
         for record in top_records:
             measured_traces.append(record.trace)
         actual_num = len(measured_traces)
-        pp = ThreadedTraceApply(self.searchstrategy.postprocs_)
+        pp = ThreadedTraceApply(self.searchstrategy.postprocs)
         results = [None for _ in range(actual_num)]
         def f_proc_measured(thread_id, trace_id):
             data = self.searchstrategy.per_thread_data_[thread_id]
@@ -351,7 +354,7 @@ class State:
                     found_new = True
                     out_schs.append(results[i])
             fail_count += not found_new
-            self.logger(1,__name__,current_line_number(), 'Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
+            self.logger(self.logger_key[1],__name__,current_line_number(), 'Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
         return out_schs
 
     
@@ -420,20 +423,20 @@ class State:
         inits : List[Schedule]
         inits = [None]*pop
         
-        self.logger(1,__name__,current_line_number(),"Generating candidates......")
-        measured = self.pickbestfromdatabase(pop*self.searchstrategy.init_measured_ratio)
-        self.logger(1,__name__,current_line_number(),"Picked top %s candidate(s) from database",len(measured))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
+        measured = self.pickbestfromdatabase(pop*self.searchstrategy.init_measured_ratio) # TODO: ERROR
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database",len(measured))
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
-            self.logger(2,__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
+            self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
-        self.logger(1,__name__,current_line_number(),"Sample %s candidate(s)",len(unmeasured))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)",len(unmeasured))
         inits.extend(measured)
         inits.extend(unmeasured)
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num)
-        self.logger(1,__name__,current_line_number(),"Got %s candidate(s) with evolutionary search",len(bests))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search",len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
-        self.logger(1,__name__,current_line_number(),"Sendding %s candidates(s) for measurement",len(picks))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement",len(picks))
         #判断是否为空，这里有一个空迭代容忍数量
         if(picks is None):
             self.num_empty_iters+=1
@@ -472,7 +475,7 @@ class State:
             
 
             with Profiler.timeit("EvoSearch/Evolve/Mutation"):
-                pp = ThreadedTraceApply(self.postprocs_)
+                pp = ThreadedTraceApply(self.postprocs)
                 cbmask = ConcurrentBitmask(self.population_size)
                 next_population = [None]*self.population_size
 
@@ -516,15 +519,15 @@ class State:
         for st in range(0,len(heap.heap),kNumScoresPerLine):
             output_str += "\n"
             ed = min(st + kNumScoresPerLine,len(heap.heap))
-            self.logger(1,__name__,current_line_number(),"[%d : %d]:\t",st + 1,ed)
+            self.logger(self.logger_key[1],__name__,current_line_number(),"[%d : %d]:\t",st + 1,ed)
             output_str += f"[{int(st+1)} : {int(ed)}]:\t"
             for i in range(st,ed):
                 if i != st:
                     self.logger(1,__name__,current_line_number()," ")
                     output_str += " "
-                self.logger(1,__name__,current_line_number(),"%g",heap.heap[i].score)
+                self.logger(self.logger_key[1],__name__,current_line_number(),"%g",heap.heap[i].score)
                 output_str += f"{round(heap.heap[i].score,4)}"
-            self.logger(1,__name__,current_line_number(),"\n")
+            self.logger(self.logger_key[1],__name__,current_line_number(),"\n")
             output_str += "\n"
 
         print(f"Scores of the best {len(heap.heap)} schedules:",output_str)
