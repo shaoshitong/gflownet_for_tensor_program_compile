@@ -101,7 +101,7 @@ def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
         j = SampleInt(rand_state,i ,n)
         if i != j:
             order[i], order[j] = order[j], order[i]
-    return [order[0],order[k-1]]
+    return order[:k]
 
 def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
     measure_inputs : List[MeasureCandidate]
@@ -375,7 +375,7 @@ class State:
         num_rands = num * self.searchstrategy.eps_greedy#measurement采样的数量
         num_bests = num - num_rands
         rands =  SampleWithoutReplacement(self.context.rand_state, len(unmeasured), len(unmeasured))
-        results:List[Schedule]
+        results = []
         measured_workloads = self.measured_workloads_
         i_bests, i_rands =0,0
         for i in range(num):
@@ -385,20 +385,20 @@ class State:
             sch : Schedule = None
             if(i < num_bests):#need best
                 if has_best:
-                    i_bests+=1
                     sch = bests[i_bests]
+                    i_bests+=1
                 elif has_rand:
-                    i_rands+=1
                     sch = unmeasured[rands[i_rands]]
+                    i_rands+=1
                 else:
                     break
             else: #not need best any more
                 if has_rand:
-                    i_rands+=1
                     sch = unmeasured[rands[i_rands]]
+                    i_rands+=1
                 elif(has_best):
-                    i_bests+=1
                     sch = bests[i_bests]
+                    i_bests+=1
                 else:
                     break
             mod = sch.mod
@@ -490,8 +490,14 @@ class State:
                         if opt_mutator:
                             mutator = opt_mutator
                             new_trace = mutator.apply(trace)
-                            result = sch = pp.Apply(mod,new_trace,rand_state)
+                            if new_trace is not None:
+                                sch = pp.Apply(mod,new_trace,rand_state)
+                                if sch is not None:
+                                    result = sch
+                                    break
+                        else:
                             break
+
                     if result is None:
                         result = population[sampled_trace_id]
                     next_population[trace_id] = result
