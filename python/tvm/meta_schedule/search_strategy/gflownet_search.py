@@ -30,6 +30,7 @@ from ..tune_context import TuneContext
 from ..utils import (cpu_count, derived_object,
                      get_global_func_with_default_on_worker)
 from .search_strategy import MeasureCandidate, PySearchStrategy, SearchStrategy
+from functools import partial
 
 """
 How to use it ?
@@ -45,6 +46,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
+import threading
 
 #zhangchunlei
 from tvm._ffi import register_object
@@ -174,8 +176,8 @@ class PerThreadData:
 
         
 class ThreadedTraceApply:
-
-
+    
+    
     class Item:
         postproc = None
         fail_counter = 0
@@ -186,6 +188,7 @@ class ThreadedTraceApply:
     def __init__(self,postprocs) -> None:
         self.n_ = len(postprocs)
         self.items_ = [self.Item(postprocs[i]) for i in range(self.n_)]
+        self.lock = threading.Lock()#保证没有线程冲突，使用互斥锁
 
     def Apply(self,mod,trace,rand_state):
         sch = Schedule(mod,
@@ -197,17 +200,19 @@ class ThreadedTraceApply:
         for i in range(self.n_):
             item = self.items_[i]
             if not item.postproc.apply(sch):
-                item.fail_counter += 1
-                return None
+                with self.lock:
+                    item.fail_counter += 1
+                    return None
         return sch
 
     def SummarizeFailures(self):
         result = ""
         for i in range(self.n_):
-            item = self.items_[i]
-            result += "Postproc #"+str(i)+" ["+str(item.postproc)+"]: "+str(item.fail_counter.value)+" failure(s)"
-            if i != self.n_ - 1:
-                result += "\n"
+            with self.lock:
+                item = self.items_[i]
+                result += "Postproc #"+str(i)+" ["+str(item.postproc)+"]: "+str(item.fail_counter)+" failure(s)"
+                if i != self.n_ - 1:
+                    result += "\n"
         print(result)
         return result
     
@@ -258,9 +263,9 @@ class State:
     token_: Workload
         The token registered for the given workload in database.
     """
-    def __init__(self, context, searchstrategy, max_trials, num_trials_per_iter, design_space_schedules, database, cost_model, model_equality = "structural") -> None:
+    def __init__(self, context, searchstrategy: 'GflowNetSearch', max_trials, num_trials_per_iter, design_space_schedules, database, cost_model, model_equality = "structural") -> None:
         self.context = context
-        self.searchstrategy = searchstrategy
+        self.searchstrategy:GflowNetSearch = searchstrategy
         self.max_trials = max_trials
         self.num_trials_per_iter = num_trials_per_iter
         self.design_space_schedules = design_space_schedules
@@ -304,6 +309,7 @@ class State:
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
         top_records = self.database_.get_top_k(self.token_, num) # TODO: ERROR
+        #此处有值非none,长度为64
         for record in top_records:
             measured_traces.append(record.trace)
         actual_num = len(measured_traces)
@@ -322,7 +328,8 @@ class State:
             else:
                 raise ValueError(f"Cannot postprocess the trace:\n{trace}")
         pool = multiprocessing.Pool(processes=self.context.num_threads)
-        pool.map(f_proc_measured, range(actual_num))
+        f_proc_measured_global = partial(f_proc_measured)
+        pool.map_async(f_proc_measured_global, range(actual_num))
         pool.close()
         pool.join()
         return results
@@ -330,10 +337,10 @@ class State:
     
     def SampleInitPopulation(self, num : int)-> List[Schedule]:
         _ = Profiler.timeit("EvoSearch/SampleInitPopulation")
-        pp : ThreadedTraceApply(self.searchstrategy.postprocs)
+        pp = ThreadedTraceApply(self.searchstrategy.postprocs)
         out_schs = []
         fail_count = 0
-        while(len(out_schs) < self.searchstrategy.init_min_unmeasured and fail_count < self.sraechstrategy.max_fail_count):
+        while(len(out_schs) < self.searchstrategy.init_min_unmeasured and fail_count < self.searchstrategy.max_fail_count):
             results = [None]*num
             def f_proc_unmeasured(thread_id:int, trace_id:int):               
                 data = self.per_thread_data_[thread_id]     
@@ -347,14 +354,17 @@ class State:
                 if sch is not None:
                     results[trace_id] = sch.get() #获取optional的值
             pool = multiprocessing.Pool(processes=self.context.num_threads)
-            pool.map(f_proc_unmeasured, range(num))
+            f_proc_unmeasured_global = partial(f_proc_unmeasured)
+            pool.map_async(f_proc_unmeasured_global, range(num))
+            pool.close()
+            pool.join()
             found_new  = False
             for i in range(num):
                 if results[i] is not None:
                     found_new = True
                     out_schs.append(results[i])
             fail_count += not found_new
-            self.logger(self.logger_key[1],__name__,current_line_number(), 'Sample-Init-Population summary:\n%s',pp.SummarizeFailures())
+            self.logger(self.logger_key[1],__name__,current_line_number(), 'Sample-Init-Population summary:\n%s' % pp.SummarizeFailures())
         return out_schs
 
     
@@ -424,19 +434,20 @@ class State:
         inits = [None] * pop
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
-        measured = self.pickbestfromdatabase(pop*self.searchstrategy.init_measured_ratio) # TODO: ERROR
-        self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database",len(measured))
+        measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio) # TODO: ERROR
+        #此处measured长度为64,但是全为None
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
             self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
-        self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)",len(unmeasured))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)" % len(unmeasured))
         inits.extend(measured)
         inits.extend(unmeasured)
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num)
-        self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search",len(bests))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
-        self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement",len(picks))
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
         #判断是否为空，这里有一个空迭代容忍数量
         if(picks is None):
             self.num_empty_iters+=1
@@ -501,7 +512,8 @@ class State:
                     next_population[trace_id] = result
 
                 pool = multiprocessing.Pool(processes=self.context.num_threads)
-                pool.map(f_find_candidate, 0, self.searchstrategy.population_size)
+                f_find_candidate_global = partial(f_find_candidate)
+                pool.map_async(f_find_candidate_global, 0, self.searchstrategy.population_size)
                 pool.close()
                 pool.join()
                 list_swap(population,next_population)
@@ -519,13 +531,13 @@ class State:
         for st in range(0,len(heap.heap),kNumScoresPerLine):
             output_str += "\n"
             ed = min(st + kNumScoresPerLine,len(heap.heap))
-            self.logger(self.logger_key[1],__name__,current_line_number(),"[%d : %d]:\t",st + 1,ed)
+            self.logger(self.logger_key[1],__name__,current_line_number(),"[%d : %d]:\t" % (st + 1,ed))
             output_str += f"[{int(st+1)} : {int(ed)}]:\t"
             for i in range(st,ed):
                 if i != st:
-                    self.logger(Logger.info,__name__,current_line_number()," ")
+                    self.logger(self.logger_key[1],__name__,current_line_number()," ")
                     output_str += " "
-                self.logger(self.logger_key[1],__name__,current_line_number(),"%g",heap.heap[i].score)
+                self.logger(self.logger_key[1],__name__,current_line_number(),"%g" % heap.heap[i].score)
                 output_str += f"{round(heap.heap[i].score,4)}"
             self.logger(self.logger_key[1],__name__,current_line_number(),"\n")
             output_str += "\n"
