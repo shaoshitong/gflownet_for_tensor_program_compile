@@ -3,17 +3,24 @@ from dataclasses import dataclass, field
 from typing import Any
 from tvm.tir.schedule import Schedule,Trace
 
-@dataclass(order=True)
+
 class Item:
     score: float
     sch: Schedule
 
+    def __init__(self,score,sch):
+        self.score=score
+        self.sch=sch
+
+    def __lt__(self, other):
+        return self.score > other.score
+    
 class SizedHeap:
     def __init__(self, size_limit):
         self.size_limit = size_limit
         self.heap = []
 
-    def push(self, sch, score):
+    def push(self, score, sch):
         size = len(self.heap)
         item = Item(score, sch)
         if size < self.size_limit:
@@ -27,3 +34,6 @@ class SizedHeap:
     
     def __len__(self):
         return len(self.heap)
+    
+    def __getitem__(self,item):
+        return self.heap[item]

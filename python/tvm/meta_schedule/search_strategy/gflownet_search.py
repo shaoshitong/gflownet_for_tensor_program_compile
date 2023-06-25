@@ -40,7 +40,7 @@ sm.equal(mod, mod)
 sm.hash(mod)
 
 """
-
+from multiprocessing import Pool, Manager
 import random
 from collections import defaultdict
 from dataclasses import dataclass
@@ -81,8 +81,9 @@ def SampleInt(rand_state:np.int64, min_inclusive:int,max_exclusive:int):
     if(min_inclusive+1 == max_exclusive):
         return min_inclusive
     rand_ = forkseed(rand_state)
+    np.random.seed(rand_)
     dist = random.randint(min_inclusive, max_exclusive-1)
-    return dist(rand_)
+    return dist
 
 #rand)state是schedule的， 从0-n中采样k个（无重复）
 def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
@@ -94,13 +95,13 @@ def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
         if result1 >= result0:
             result1 += 1
         return [result0,result1]
-    order = range(0,n)
+    order = list(range(0,n))
     
     for i in range(k):
         j = SampleInt(rand_state,i ,n)
         if i != j:
             order[i], order[j] = order[j], order[i]
-    return [order[0],order[k]]
+    return [order[0],order[k-1]]
 
 def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
     measure_inputs : List[MeasureCandidate]
@@ -125,15 +126,15 @@ class PerThreadData:
         self.mod = None
         self.rand_state = np.int64(-1)
         self.trace_sampler = None
-        self.mutatot_sampler = None
+        self.mutator_sampler = None
     
     def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs):
-        from tvm import tir
-        tir.multiply
+        self.trace_sampler = partial(PerThreadData.default_trace_sampler,rand_state=self.rand_state,weights=scores)
+        self.mutator_sampler = partial(PerThreadData.default_mutator_sampler,genetic_mutate_prob=genetic_mutate_prob,mutator_probs=mutator_probs,rand_state=self.rand_state)
 
     
     @staticmethod
-    def default_trace_sampler(rand_state,weights,sum_type = "softmax"):
+    def default_trace_sampler(rand_state, weights, sum_type = "softmax"):
         np.random.seed(rand_state)
         if not isinstance(weights,np.ndarray):
             weights = np.array(weights)
@@ -146,12 +147,11 @@ class PerThreadData:
             weights = np.exp(weights - weights.min())/np.exp(weights - weights.min()).sum()
         else:
             raise NotImplementedError
-        
         idx = np.random.choice(weights.shape[0],1,p=weights).item()
         return idx
     
     @staticmethod
-    def default_mutatot_sampler(genetic_mutate_prob,mutator_probs,rand_state):
+    def default_mutator_sampler(genetic_mutate_prob,mutator_probs,rand_state):
         np.random.seed(rand_state)
         mutators = []
         mutators.append(None)
@@ -159,10 +159,10 @@ class PerThreadData:
         masses.append(1 - genetic_mutate_prob)
         total_mass_mutator = 0
         if genetic_mutate_prob>0:
-            for mutator,mass in mutator_probs:
-                total_mass_mutator += mass
+            for mutator,mass in mutator_probs.items():
+                total_mass_mutator += float(mass.value)
                 mutators.append(mutator)
-                masses.append(mass*genetic_mutate_prob)
+                masses.append(float(mass.value)*genetic_mutate_prob)
         if (total_mass_mutator == 0.0):
             masses[0] = 1.0
             for i in range(1,len(masses)):
@@ -170,14 +170,11 @@ class PerThreadData:
         elif (total_mass_mutator != 1.0):
             for i in range(1,len(masses)):
                 masses[i]/=total_mass_mutator
-        
-        return PerThreadData.default_trace_sampler(rand_state,masses)
-        
+        return mutators[PerThreadData.default_trace_sampler(rand_state,masses)]
 
         
 class ThreadedTraceApply:
-    
-    
+     
     class Item:
         postproc = None
         fail_counter = 0
@@ -188,11 +185,10 @@ class ThreadedTraceApply:
     def __init__(self,postprocs) -> None:
         self.n_ = len(postprocs)
         self.items_ = [self.Item(postprocs[i]) for i in range(self.n_)]
-        self.lock = threading.Lock()#保证没有线程冲突，使用互斥锁
 
     def Apply(self,mod,trace,rand_state):
         sch = Schedule(mod,
-                       forkseed(rand_state),
+                       seed=forkseed(rand_state),
                        debug_mask=0,
                        error_render_level = "none")
         trace.apply_to_schedule(sch,remove_postproc=True)
@@ -200,19 +196,17 @@ class ThreadedTraceApply:
         for i in range(self.n_):
             item = self.items_[i]
             if not item.postproc.apply(sch):
-                with self.lock:
-                    item.fail_counter += 1
-                    return None
+                item.fail_counter += 1
+                return None
         return sch
 
     def SummarizeFailures(self):
         result = ""
         for i in range(self.n_):
-            with self.lock:
-                item = self.items_[i]
-                result += "Postproc #"+str(i)+" ["+str(item.postproc)+"]: "+str(item.fail_counter)+" failure(s)"
-                if i != self.n_ - 1:
-                    result += "\n"
+            item = self.items_[i]
+            result += "Postproc #"+str(i)+" ["+str(item.postproc)+"]: "+str(item.fail_counter)+" failure(s)"
+            if i != self.n_ - 1:
+                result += "\n"
         print(result)
         return result
     
@@ -231,7 +225,20 @@ def PredictNormalizedScore(candidates,context,cost_model):
     scores = np.clip(scores,0.0,np.inf)
     return scores
 
-
+def f_proc_measured(trace_id, datas, measured_traces, pp, results,num_threads):
+    thread_id = trace_id%num_threads
+    data = datas[thread_id]
+    rand_state = data.rand_state
+    mod = data.mod
+    trace = measured_traces[trace_id]
+    result = results[trace_id]
+    assert result is None, f"result {trace_id} should be None"
+    sch = pp.Apply(mod, trace, rand_state)
+    if sch is not None:
+        results[trace_id] = sch
+    else:
+        raise ValueError(f"Cannot postprocess the trace:\n{trace}")
+            
 @register_object("meta_schedule.State")
 class State:
     """
@@ -276,7 +283,7 @@ class State:
         self.ed = num_trials_per_iter
         self.num_empty_iters = 0
         self.logger = get_logging_func(get_logger(__name__))
-        self.measured_workloads_:IRModuleSet = None
+        self.measured_workloads_:IRModuleSet = IRModuleSet(self.model_equality)
         self.design_spaces = []
         for space in self.design_space_schedules:
             self.design_spaces.append(space.trace.simplified(True))
@@ -293,7 +300,7 @@ class State:
         self.st = 0
         self.ed = 0
         self.num_empty_iters = 0
-        self.measured_workloads_:IRModuleSet = None
+        self.measured_workloads_:IRModuleSet = IRModuleSet(self.model_equality)
         self.design_spaces = []
         for space in self.design_space_schedules:
             self.design_spaces.append(space.trace.simplified(True))
@@ -314,26 +321,10 @@ class State:
             measured_traces.append(record.trace)
         actual_num = len(measured_traces)
         pp = ThreadedTraceApply(self.searchstrategy.postprocs)
-        results = [None for _ in range(actual_num)]
-        def f_proc_measured(thread_id, trace_id):
-            data = self.searchstrategy.per_thread_data_[thread_id]
-            rand_state = data.rand_state
-            mod = data.mod
-            trace = measured_traces[trace_id]
-            result = results[trace_id]
-            assert result is None, f"result {trace_id} should be None"
-            sch = pp.apply(mod, trace, rand_state)
-            if sch is not None:
-                results[trace_id] = sch
-            else:
-                raise ValueError(f"Cannot postprocess the trace:\n{trace}")
-        pool = multiprocessing.Pool(processes=self.context.num_threads)
-        f_proc_measured_global = partial(f_proc_measured)
-        pool.map_async(f_proc_measured_global, range(actual_num))
-        pool.close()
-        pool.join()
+        results = [None]*actual_num
+        for i in range(actual_num):
+            f_proc_measured(i, self.per_thread_data_, measured_traces, pp, results,self.context.num_threads)
         return results
-    
     
     def SampleInitPopulation(self, num : int)-> List[Schedule]:
         _ = Profiler.timeit("EvoSearch/SampleInitPopulation")
@@ -342,22 +333,19 @@ class State:
         fail_count = 0
         while(len(out_schs) < self.searchstrategy.init_min_unmeasured and fail_count < self.searchstrategy.max_fail_count):
             results = [None]*num
-            def f_proc_unmeasured(thread_id:int, trace_id:int):               
+            def f_proc_unmeasured(thread_id:int, trace_id:int):
+                thread_id = thread_id%self.context.num_threads            
                 data = self.per_thread_data_[thread_id]     
                 rand_state = data.rand_state
                 mod = data.mod
                 assert  results[trace_id] is None , f"results {trace_id} should be None"
                 design_space_index = SampleInt(rand_state,0,len(self.design_spaces))
                 trace = Trace(self.design_spaces[design_space_index].insts, {})
-                sch : Optional[Schedule] 
                 sch = pp.Apply(mod, trace, rand_state)
                 if sch is not None:
-                    results[trace_id] = sch.get() #获取optional的值
-            pool = multiprocessing.Pool(processes=self.context.num_threads)
-            f_proc_unmeasured_global = partial(f_proc_unmeasured)
-            pool.map_async(f_proc_unmeasured_global, range(num))
-            pool.close()
-            pool.join()
+                    results[trace_id] = sch #获取optional的值
+            for i in range(num):
+                f_proc_unmeasured(i,i)
             found_new  = False
             for i in range(num):
                 if results[i] is not None:
@@ -413,7 +401,7 @@ class State:
                     sch = bests[i_bests]
                 else:
                     break
-            mod = sch.mod()
+            mod = sch.mod
             shash = self.ModuleHash(mod)
             if(measured_workloads.Has(mod, shash) is False):
                 measured_workloads.Add(mod, shash)
@@ -430,9 +418,6 @@ class State:
             self.ed = self.max_trials
         assert self.st < self.ed, f"check fail: {self.st} < {self.ed}"
         pop = self.searchstrategy.population_size
-        inits : List[Schedule]
-        inits = [None] * pop
-        
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
         measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio) # TODO: ERROR
         #此处measured长度为64,但是全为None
@@ -442,8 +427,7 @@ class State:
             self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)" % len(unmeasured))
-        inits.extend(measured)
-        inits.extend(unmeasured)
+        inits = measured + unmeasured
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num)
         self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
@@ -463,7 +447,7 @@ class State:
         exists = IRModuleSet(self.model_equality)
         with Profiler.timeit("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads"):
             assert num > 0, "num should be positive"
-            exists = self.sraechstrategy.measured_workloads_
+            exists = self.measured_workloads_
         iter = 0
         while True: 
             scores = PredictNormalizedScore(population,self.context,self.cost_model_)
@@ -478,19 +462,20 @@ class State:
                     score = scores[i]
                     if exists.Has(mod,shash) == False:
                         exists.Add(mod,shash)
-                        heap.push((score,sch))
+                        heap.push(score,sch)
                 if iter == self.searchstrategy.genetic_num_iters:
                     break
                 for data in self.per_thread_data_:
-                    data.Set(scores,self.searchstrategy.genertic_mutate_prob,self.searchstrategy.mutator_probs_)
+                    data.Set(scores,self.searchstrategy.genetic_mutate_prob,self.searchstrategy.mutator_probs)
             
 
             with Profiler.timeit("EvoSearch/Evolve/Mutation"):
-                pp = ThreadedTraceApply(self.postprocs)
-                cbmask = ConcurrentBitmask(self.population_size)
-                next_population = [None]*self.population_size
+                pp = ThreadedTraceApply(self.searchstrategy.postprocs)
+                cbmask = ConcurrentBitmask(self.searchstrategy.population_size)
+                next_population = [None]*self.searchstrategy.population_size
 
                 def f_find_candidate(thread_id,trace_id):
+                    thread_id = trace_id%self.context.num_threads
                     data = self.per_thread_data_[thread_id]
                     rand_state = data.rand_state
                     mod = data.mod
@@ -503,46 +488,43 @@ class State:
                         trace = population[sampled_trace_id].trace
                         opt_mutator = mutator_sampler()
                         if opt_mutator:
-                            mutator = opt_mutator.value
-                            new_trace = mutator.Apply(trace,rand_state)
+                            mutator = opt_mutator
+                            new_trace = mutator.apply(trace)
                             result = sch = pp.Apply(mod,new_trace,rand_state)
                             break
                     if result is None:
                         result = population[sampled_trace_id]
                     next_population[trace_id] = result
 
-                pool = multiprocessing.Pool(processes=self.context.num_threads)
-                f_find_candidate_global = partial(f_find_candidate)
-                pool.map_async(f_find_candidate_global, 0, self.searchstrategy.population_size)
-                pool.close()
-                pool.join()
+                for i in range(self.searchstrategy.population_size):
+                    f_find_candidate(i,i)
                 list_swap(population,next_population)
 
             iter+=1
         with Profiler.timeit("EvoSearch/Evolve/Misc"):
             # Return the best states from the heap, sorting from higher score to lower ones
             results = []
-            for item in heap.heap[::-1]:
+            for item in heap[::-1]:
                 results.append(item.sch)
         
         # output the tuning log
         kNumScoresPerLine = 16
         output_str = ""
-        for st in range(0,len(heap.heap),kNumScoresPerLine):
+        for st in range(0,len(heap),kNumScoresPerLine):
             output_str += "\n"
-            ed = min(st + kNumScoresPerLine,len(heap.heap))
+            ed = min(st + kNumScoresPerLine,len(heap))
             self.logger(self.logger_key[1],__name__,current_line_number(),"[%d : %d]:\t" % (st + 1,ed))
             output_str += f"[{int(st+1)} : {int(ed)}]:\t"
             for i in range(st,ed):
                 if i != st:
                     self.logger(self.logger_key[1],__name__,current_line_number()," ")
                     output_str += " "
-                self.logger(self.logger_key[1],__name__,current_line_number(),"%g" % heap.heap[i].score)
-                output_str += f"{round(heap.heap[i].score,4)}"
+                self.logger(self.logger_key[1],__name__,current_line_number(),"%g" % heap[i].score)
+                output_str += f"{round(heap[i].score,4)}"
             self.logger(self.logger_key[1],__name__,current_line_number(),"\n")
             output_str += "\n"
 
-        print(f"Scores of the best {len(heap.heap)} schedules:",output_str)
+        print(f"Scores of the best {len(heap)} schedules:",output_str)
         return results
   
 
