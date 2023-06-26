@@ -372,7 +372,7 @@ class State:
         The final picked candidates with a ratio of both.
         """
         _ = Profiler.timeit("EvoSearch/PickWithEpsGreedy")
-        num_rands = num * self.searchstrategy.eps_greedy#measurement采样的数量
+        num_rands = num * self.searchstrategy.eps_greedy #measurement采样的数量
         num_bests = num - num_rands
         rands =  SampleWithoutReplacement(self.context.rand_state, len(unmeasured), len(unmeasured))
         results = []
@@ -383,7 +383,7 @@ class State:
             has_rand = i_rands < len(rands)
             #pick schedule
             sch : Schedule = None
-            if(i < num_bests):#need best
+            if i < num_bests:#need best
                 if has_best:
                     sch = bests[i_bests]
                     i_bests+=1
@@ -396,14 +396,19 @@ class State:
                 if has_rand:
                     sch = unmeasured[rands[i_rands]]
                     i_rands+=1
-                elif(has_best):
+                elif has_best:
                     sch = bests[i_bests]
                     i_bests+=1
                 else:
                     break
             mod = sch.mod
             shash = self.ModuleHash(mod)
-            if(measured_workloads.Has(mod, shash) is False):
+            print(measured_workloads.tab)
+            print(measured_workloads.Has(mod, shash))
+            print("")
+            if i>3:
+                break
+            if measured_workloads.Has(mod, shash) == 0:
                 measured_workloads.Add(mod, shash)
                 results.append(sch)
         
@@ -432,8 +437,8 @@ class State:
         self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
-        #判断是否为空，这里有一个空迭代容忍数量
-        if(picks is None):
+        #判断是否为空，这里有一个空迭代容忍数量 # ERROR: all is empty
+        if picks is None:
             self.num_empty_iters+=1
             if self.num_empty_iters >= self.searchstrategy.num_empty_iters_before_early_stop:
                 return None
@@ -447,7 +452,7 @@ class State:
         exists = IRModuleSet(self.model_equality)
         with Profiler.timeit("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads"):
             assert num > 0, "num should be positive"
-            exists = self.measured_workloads_
+            exists = copy.deepcopy(self.measured_workloads_)
         iter = 0
         while True: 
             scores = PredictNormalizedScore(population,self.context,self.cost_model_)
@@ -519,18 +524,14 @@ class State:
         for st in range(0,len(heap),kNumScoresPerLine):
             output_str += "\n"
             ed = min(st + kNumScoresPerLine,len(heap))
-            self.logger(self.logger_key[1],__name__,current_line_number(),"[%d : %d]:\t" % (st + 1,ed))
             output_str += f"[{int(st+1)} : {int(ed)}]:\t"
             for i in range(st,ed):
                 if i != st:
-                    self.logger(self.logger_key[1],__name__,current_line_number()," ")
                     output_str += " "
-                self.logger(self.logger_key[1],__name__,current_line_number(),"%g" % heap[i].score)
                 output_str += f"{round(heap[i].score,4)}"
-            self.logger(self.logger_key[1],__name__,current_line_number(),"\n")
             output_str += "\n"
-
-        print(f"Scores of the best {len(heap)} schedules:",output_str)
+        output_str = f"Scores of the best {len(heap)} schedules:" + output_str
+        self.logger(self.logger_key[1],__name__,current_line_number(),output_str)
         return results
   
 
