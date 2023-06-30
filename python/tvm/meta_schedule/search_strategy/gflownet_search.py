@@ -226,7 +226,7 @@ def PredictNormalizedScore(candidates,context,cost_model):
     return scores
 
 def f_proc_measured(trace_id, datas, measured_traces, pp, results,num_threads):
-    thread_id = trace_id%num_threads
+    thread_id = trace_id % num_threads
     data = datas[thread_id]
     rand_state = data.rand_state
     mod = data.mod
@@ -315,8 +315,7 @@ class State:
         num = int(num)
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
-        top_records = self.database_.get_top_k(self.token_, num) # TODO: ERROR
-        #此处有值非none,长度为64
+        top_records = self.database_.get_top_k(self.token_, num)
         for record in top_records:
             measured_traces.append(record.trace)
         actual_num = len(measured_traces)
@@ -343,7 +342,7 @@ class State:
                 trace = Trace(self.design_spaces[design_space_index].insts, {})
                 sch = pp.Apply(mod, trace, rand_state)
                 if sch is not None:
-                    results[trace_id] = sch #获取optional的值
+                    results[trace_id] = sch 
             for i in range(num):
                 f_proc_unmeasured(i,i)
             found_new  = False
@@ -372,7 +371,7 @@ class State:
         The final picked candidates with a ratio of both.
         """
         _ = Profiler.timeit("EvoSearch/PickWithEpsGreedy")
-        num_rands = num * self.searchstrategy.eps_greedy #measurement采样的数量
+        num_rands = num * self.searchstrategy.eps_greedy 
         num_bests = num - num_rands
         rands =  SampleWithoutReplacement(self.context.rand_state, len(unmeasured), len(unmeasured))
         results = []
@@ -403,11 +402,6 @@ class State:
                     break
             mod = sch.mod
             shash = self.ModuleHash(mod)
-            print(measured_workloads.tab)
-            print(measured_workloads.Has(mod, shash))
-            print("")
-            if i>3:
-                break
             if measured_workloads.Has(mod, shash) == 0:
                 measured_workloads.Add(mod, shash)
                 results.append(sch)
@@ -425,7 +419,7 @@ class State:
         pop = self.searchstrategy.population_size
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
         measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio) # TODO: ERROR
-        #此处measured长度为64,但是全为None
+        
         self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
@@ -433,11 +427,11 @@ class State:
             return None
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)" % len(unmeasured))
         inits = measured + unmeasured
-        bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num)
+        bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num) 
+        
         self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
-        #判断是否为空，这里有一个空迭代容忍数量 # ERROR: all is empty
         if picks is None:
             self.num_empty_iters+=1
             if self.num_empty_iters >= self.searchstrategy.num_empty_iters_before_early_stop:
@@ -454,12 +448,14 @@ class State:
             assert num > 0, "num should be positive"
             exists = copy.deepcopy(self.measured_workloads_)
         iter = 0
+        heap = SizedHeap(num)
         while True: 
             scores = PredictNormalizedScore(population,self.context,self.cost_model_)
+            
             with Profiler.timeit("EvoSearch/Evolve/Misc"):
                 assert len(scores) == len(population), "scores and population should have same length"
                 # The heap to record best schedule, we do not consider schedules that are already measured
-                heap = SizedHeap(num)
+                
                 for i in range(len(population)):
                     sch = population[i]
                     mod = sch.mod
@@ -468,6 +464,7 @@ class State:
                     if exists.Has(mod,shash) == False:
                         exists.Add(mod,shash)
                         heap.push(score,sch)
+                        
                 if iter == self.searchstrategy.genetic_num_iters:
                     break
                 for data in self.per_thread_data_:
@@ -517,6 +514,7 @@ class State:
             results = []
             for item in heap[::-1]:
                 results.append(item.sch)
+            
         
         # output the tuning log
         kNumScoresPerLine = 16

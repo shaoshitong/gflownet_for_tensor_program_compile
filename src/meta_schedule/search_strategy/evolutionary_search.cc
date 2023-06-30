@@ -714,6 +714,7 @@ Optional<Array<MeasureCandidate>> EvolutionarySearchNode::State::GenerateMeasure
   std::vector<Schedule> measured = PickBestFromDatabase(pop * self->init_measured_ratio);
   TVM_PY_LOG(INFO, self->ctx_->logger)
       << "Picked top " << measured.size() << " candidate(s) from database";
+
   std::vector<Schedule> unmeasured = SampleInitPopulation(pop - measured.size());
   if (static_cast<int>(unmeasured.size()) < self->init_min_unmeasured) {
     TVM_PY_LOG(WARNING, self->ctx_->logger)
@@ -721,14 +722,17 @@ Optional<Array<MeasureCandidate>> EvolutionarySearchNode::State::GenerateMeasure
     return NullOpt;
   }
   TVM_PY_LOG(INFO, self->ctx_->logger) << "Sampled " << unmeasured.size() << " candidate(s)";
+
   inits.insert(inits.end(), measured.begin(), measured.end());
   inits.insert(inits.end(), unmeasured.begin(), unmeasured.end());
   std::vector<Schedule> bests = EvolveWithCostModel(inits, sample_num);
   TVM_PY_LOG(INFO, self->ctx_->logger)
       << "Got " << bests.size() << " candidate(s) with evolutionary search";
+
   std::vector<Schedule> picks = PickWithEpsGreedy(unmeasured, bests, sample_num);
   TVM_PY_LOG(INFO, self->ctx_->logger)
       << "Sending " << picks.size() << " candidates(s) for measurement";
+
   if (picks.empty()) {
     ++this->num_empty_iters;
     if (this->num_empty_iters >= self->num_empty_iters_before_early_stop) {
