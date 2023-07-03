@@ -13,6 +13,7 @@ from tqdm import tqdm
 import tvm
 from tvm import relay
 from tvm import auto_scheduler
+import tvm.meta_schedule as ms
 
 from common import (convert_to_nhwc, dtype2torch, NETWORK_INFO_FOLDER,
     get_relay_ir_filename, get_task_info_filename)
@@ -132,16 +133,15 @@ def dump_network(network_key, target):
     # Dump task information
     if not os.path.exists(task_info_filename):
         print(f"Dump task info for {network_task_key}...")
-        tasks, task_weights, envs = auto_scheduler.extract_tasks(mod["main"], params, tvm.target.Target(target))
-        print(envs)
-        pickle.dump((tasks, task_weights), open(task_info_filename, "wb"))
+        extracted_tasks  = ms.relay_integration.extract_tasks(mod["main"], tvm.target.Target(target),params)
+        pickle.dump((extracted_tasks), open(task_info_filename, "wb"))
 
 
 def build_network_keys():
     network_keys = []
 
     # bert
-    for batch_size in [1, 2, 4]:
+    for batch_size in [1, 4, 8]:
         for seq_length in [64, 128, 256]:
             for scale in ['tiny', 'base', 'medium', 'large']:
                 network_keys.append((f'bert_{scale}',
@@ -213,9 +213,9 @@ def get_all_tasks():
     filenames.sort()
 
     for filename in tqdm(filenames):
-        tasks, task_weights = pickle.load(open(filename, "rb"))
-        for t in tasks:
-            task_key = (t.workload_key, str(t.target.kind))
+        extractedtasks = pickle.load(open(filename, "rb"))
+        for t in extractedtasks:
+            task_key = (str(t.dispatched[0]),t.target.kind)
 
             if task_key not in all_task_keys:
                 all_task_keys.add(task_key)
@@ -238,5 +238,5 @@ if __name__ == "__main__":
 
     # Dump an index table that contains all tasks
     tasks = get_all_tasks()
-    tasks.sort(key=lambda x: (str(x.target.kind), x.compute_dag.flop_ct, x.workload_key))
+    tasks.sort(key=lambda x: (str(x.target.kind), x.task_name))
     pickle.dump(tasks, open(f"{NETWORK_INFO_FOLDER}/all_tasks.pkl", "wb"))
