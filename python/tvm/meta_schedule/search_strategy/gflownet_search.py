@@ -105,9 +105,9 @@ def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
 
 def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
     measure_inputs : List[MeasureCandidate]
-    measure_inputs = [None]*len(picks)
+    measure_inputs = []
     for sch in picks:
-        measure_inputs.append(MeasureCandidate(sch,args_info=ArgInfo.from_entry_func(sch.mod(), remove_preproc= True)))
+        measure_inputs.append(MeasureCandidate(sch,args_info=ArgInfo.from_entry_func(sch.mod, remove_preproc= True)))
     return measure_inputs
 
 def list_swap(list1, list2):
