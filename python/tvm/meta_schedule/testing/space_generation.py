@@ -74,6 +74,7 @@ def _find_match_sketch_id(
         i = 0
         new_decisions = {}
         for inst in sketch.trace.insts:
+            print(inst.kind.name,expected_decision[i])
             if not inst.kind.name.startswith("Sample"):
                 continue
             assert i < len(expected_decision)
@@ -83,6 +84,7 @@ def _find_match_sketch_id(
         if len(new_decisions) != len(expected_decision):
             continue
         sch = Schedule(mod, debug_mask=debug_mask)
+        print(new_decisions,sketch.trace.insts)
         Trace(
             insts=sketch.trace.insts,
             decisions=new_decisions,

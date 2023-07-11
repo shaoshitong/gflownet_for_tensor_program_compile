@@ -427,6 +427,8 @@ class State:
         for unmea in unmeasured:
             s = str(unmea.mod)
             count_set.add(s)
+        # unmeasured[0].mod.show()
+        # unmeasured[0].trace.show()
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
             self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
@@ -439,6 +441,7 @@ class State:
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
         if picks is None:
             self.num_empty_iters+=1
+            
             if self.num_empty_iters >= self.searchstrategy.num_empty_iters_before_early_stop:
                 return None
         return AssembleCandidates(picks)
@@ -558,8 +561,8 @@ class GflowNetSearch(PySearchStrategy):
         self,
         *,
         context,
-        population_size = 512,
-        init_measured_ratio = 0.2,
+        population_size = 2048,
+        init_measured_ratio = 1.0,
         init_min_unmeasured = 50,
         max_fail_count = 5,
         genetic_num_iters = 4,
@@ -629,7 +632,6 @@ class GflowNetSearch(PySearchStrategy):
             The measure candidates generated, None if finished.
         """
         return self.state.GenerateMeasureCandidates()
-
 
     def notify_runner_results(
         self,

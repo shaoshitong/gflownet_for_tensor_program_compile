@@ -167,9 +167,7 @@ def main():
     except OSError:
         print(f"Directory {args.candidate_cache_dir} cannot be created successfully.")
 
-    task_paths = sorted(glob.glob(os.path.join(args.task_cache_dir, "*.json")))[
-        args.file_group * 10 : (args.file_group + 1) * 10
-    ]
+    task_paths = sorted(glob.glob(os.path.join(args.task_cache_dir, "*.json")))
     print(f"Selected models: {task_paths}")
     for num, task_path in enumerate(task_paths):
         print(f"Processing model {num} ...")
