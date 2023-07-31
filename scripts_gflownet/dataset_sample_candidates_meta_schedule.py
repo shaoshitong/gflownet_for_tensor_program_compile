@@ -175,7 +175,7 @@ def main():
     task_paths = sorted(glob.glob(os.path.join(args.task_cache_dir, "*.json")))
     print(f"Selected models: {task_paths}")
     print(f"The number of models: {len(task_paths)}")
-    task_paths = task_paths[args.file_group * 30 : (args.file_group + 1) * 30]
+    task_paths = task_paths
     for num, task_path in enumerate(task_paths):
         print(f"Processing model {num} {task_path} ...")
         with open(task_path, "rb") as file:

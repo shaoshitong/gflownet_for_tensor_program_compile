@@ -179,6 +179,11 @@ args = _parse_args()  # pylint: disable=invalid-name
 
 
 def main():
+    skip_candidates_path =  [] #"/home/tvm/scripts_gflownet/dataset/sample_candidate/inception_v3-None-4,3,299,299/fused_nn_conv2d_add_nn_relu_22_candidates.json",
+        # "/home/tvm/scripts_gflownet/dataset/sample_candidate/mobilenet_v2-None-4,3,240,240/fused_nn_conv2d_add_clip_3_candidates.json",
+        # "/home/tvm/scripts_gflownet/dataset/sample_candidate/mobilenet_v2-None-8,3,240,240/fused_nn_adaptive_avg_pool2d_candidates.json",
+        # "/home/tvm/scripts_gflownet/dataset/sample_candidate/mobilenet_v2-None-8,3,240,240/fused_nn_conv2d_add_clip_6_candidates.json",
+        # "/home/tvm/scripts_gflownet/dataset/sample_candidate/resnet_18-None-4,3,240,240/fused_nn_conv2d_add_nn_relu_1_candidates.json"]
     builder = ms.builder.LocalBuilder(timeout_sec=args.builder_timeout_sec)
     runner = ms.runner.LocalRunner(
         timeout_sec=100,
@@ -206,7 +211,12 @@ def main():
             if path.endswith("_workload.json"):
                 workload_paths.append(path)
         for workload_path in tqdm(workload_paths):
+            if os.path.exists(os.path.join(args.result_cache_dir, model_name, workload_path.split("/")[-1])):
+                print("Skip",os.path.join(args.result_cache_dir, model_name, workload_path.split("/")[-1]))
+                continue
             candidate_path = workload_path.replace("_workload.json", "_candidates.json")
+            if candidate_path in skip_candidates_path:
+                continue
             database = ms.database.JSONDatabase(
                 path_workload=workload_path,
                 path_tuning_record=candidate_path,

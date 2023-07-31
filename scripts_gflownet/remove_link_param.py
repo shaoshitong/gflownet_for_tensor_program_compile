@@ -1,23 +1,36 @@
-import json,os,sys,random,math
-import numpy as np
-import glob
+import os
+
+def find_empty_files(dir_path):
+    # 检查路径是否存在
+    if not os.path.exists(dir_path):
+        print("指定的路径不存在")
+        return []
+
+    # 初始化空文件列表
+    empty_files = []
+
+    # 遍历文件夹
+    for root, dirs, files in os.walk(dir_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+
+            # 检查文件大小
+            if os.path.getsize(file_path) == 0:
+                empty_files.append(file_path)
+
+    return empty_files
+
+def main():
+    dir_path = input("请输入需要检查的文件夹路径：")
+    empty_files = find_empty_files(dir_path)
+
+    if not empty_files:
+        print("没有找到空文件")
+    else:
+        print("找到以下空文件：")
+        for file in empty_files:
+            print(file)
+            # os.system(f"rm -rf {file}")
 
 if __name__ == "__main__":
-    folder_name = "./dataset_gpu/measure_records/k80"
-    output_folder_name = "./scripts_tlp/dataset_gpu/measure_records/k80-v2"
-    if not os.path.exists(output_folder_name):
-        os.makedirs(output_folder_name)
-    json_files = sorted(glob.glob(folder_name + '/' + '*.json'))
-    for json_file in json_files:
-        new_lines = []
-        with open(json_file, 'r') as f: # 以只读方式打开文件
-                lines = f.read().strip().split('\n') # 读取文件内容，并移除前后的空格和换行符，然后按行分割成列表
-                for line in lines:
-                    new_line = line.replace("shared_memory_per_block","max_shared_memory_per_block")
-                    new_lines.append(new_line)
-        new_lines = '\n'.join(new_lines)
-        output_json_file = os.path.join(output_folder_name,json_file.split("/")[-1])
-        with open(output_json_file, 'w') as f: # 以只读方式打开文件
-             f.write(new_lines)
-
-                
+    main()
