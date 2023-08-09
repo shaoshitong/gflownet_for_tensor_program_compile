@@ -34,7 +34,7 @@ def load_workload_and_candidate(workload_path,candidate_path):
     return database
 
 def search_all_files(work_dir):
-    workload_files = sorted(glob.glob(os.path.join(work_dir, "*_workload.json")))
+    workload_files = sorted(glob.glob(os.path.join(work_dir, "**/*_workload.json"),recursive=True))
     results = []
     for workload_file in workload_files:
         candidate_file = workload_file.replace("_workload.json","_candidates.json")
@@ -46,6 +46,7 @@ def search_all_files(work_dir):
 def load_all_files(work_dir):
     results = search_all_files(work_dir)
     databases = []
+    
     for result in results:
         database = load_workload_and_candidate(*result)
         databases.append(database)

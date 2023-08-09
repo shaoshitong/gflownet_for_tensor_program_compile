@@ -125,7 +125,6 @@ class EmbeddingSamplePerfectTile:
                 
                 # Second, decompose prime factors (math.)
                 factors = EmbeddingSamplePerfectTile.prime_factors(np_prod_value)
-                
                 masks = [False for _ in range(len(factors))]
                 embedding_result = [0 for _ in range(EmbeddingSamplePerfectTile.embedding_len)]
                 
@@ -139,7 +138,6 @@ class EmbeddingSamplePerfectTile:
                             c_np_sub_v = c_np_sub_v // factor
                             embedding_result[j] = i+1
                             masks[j] = True
-                            
                 # Fourth, embedding in binary
                 embedding_result = EmbeddingSamplePerfectTile.expand_to_binary(np.array(embedding_result))
                 embedding_results.append(embedding_result)
@@ -149,11 +147,10 @@ class EmbeddingSamplePerfectTile:
                 embedding_condition.append(nums)
                 embedding_condition.append(max_innermost_factor)
                 embedding_condition += factors.tolist()
-                while len(embedding_condition)<34:
+                while len(embedding_condition)<EmbeddingSamplePerfectTile.embedding_len+2:
                     embedding_condition += [0]
                 embedding_condition = np.array(embedding_condition)
                 embedding_conditions.append(embedding_condition)
-
         return embedding_results,embedding_conditions
             
     @staticmethod
