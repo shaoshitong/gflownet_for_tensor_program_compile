@@ -1,4 +1,4 @@
-from dataset_embedding import get_useful_dicts,get_useful_keys,load_all_files,EmbeddingSamplePerfectTile,EmbeddingAnnotation
+from dataset_embedding import load_all_files,check_decision_same,GflowNetEmbedding
 
 if __name__ == "__main__":
     import numpy as np
@@ -20,7 +20,11 @@ if __name__ == "__main__":
         return binary_array
 
 
-    databases = load_all_files("/home/tvm/scripts_gflownet/dataset/measure_candidate/bert_base-None-1,64")
+    databases = load_all_files("/home/tvm/scripts_gflownet/dataset/measure_candidate")
+    import copy,tvm
+    from tvm.tir.schedule import InstructionKind
+    from dataset_embedding import deep_copy_map
+    max_value = 0
     for database in databases:
         records = database.get_all_tuning_records()
         for record in records:
@@ -28,33 +32,21 @@ if __name__ == "__main__":
             sub_trace = sub_sch.trace
             sub_insts = sub_trace.insts
             sub_decisions = sub_trace.decisions
+            AA = (list(deep_copy_map(sub_trace.decisions).values()))
             from tvm.tir.schedule import InstructionKind
-            for sub_inst in sub_insts:
-                if sub_inst.kind == InstructionKind.get("SampleCategorical"):
-                    probs = [i.value for i in sub_inst.attrs[1]]
-                    values = [i.value for i in sub_inst.attrs[0]]
-                    print(probs,values,len(values))
+            gm = GflowNetEmbedding()
+            embedding_results,embedding_conditions,count_ptr_list = gm(sub_insts,sub_decisions,True)
+            # Now, disturb the decision's value
             
-            EmbeddingAnnotation.embedding_annotation(sub_insts,sub_decisions)
-            
-            
-            
-            # embedding_results,embedding_conditions = EmbeddingSamplePerfectTile.embedding_sample_perfectile(sub_insts,sub_decisions)
-            # # Now, disturb the decision's value
-            # import copy,tvm
-            # from tvm.tir.schedule import InstructionKind
-            # from dataset_embedding import deep_copy_map
-            
-            # new_sub_decisions = deep_copy_map(sub_decisions)
-            # for key,value in new_sub_decisions.items():
-            #     if key.kind == InstructionKind.get("SamplePerfectTile"):
-            #         new_sub_decisions[key] = [tvm.tir.const(1, dtype='int32') for v in value]
-            
-            # new_sub_insts, new_sub_decisions = EmbeddingSamplePerfectTile.unembedding_sample_perfectile(sub_insts,new_sub_decisions,embedding_results,embedding_conditions)
-            # print(new_sub_decisions)
-            # for new_sub_inst,new_sub_decision in zip(new_sub_insts,new_sub_decisions):
-            #     sub_trace.with_decision(new_sub_inst,new_sub_decision,True)
-            # print(sub_trace.decisions)
-            
-            # if len(new_sub_insts)!=0:
-            #     print("="*120)
+            new_sub_decisions = deep_copy_map(sub_decisions)
+            for key,value in new_sub_decisions.items():
+                if key.kind == InstructionKind.get("SampleCategorical"):
+                    new_sub_decisions[key] = tvm.tir.const(0, dtype='int32')
+                    
+            max_value = max(max_value,len(embedding_results))
+            new_sub_insts, new_sub_decisions = gm(sub_insts,sub_decisions,False,embedding_results=embedding_results,embedding_conditions=embedding_conditions,count_Ptr_results=count_ptr_list)
+            for new_sub_inst,new_sub_decision in zip(new_sub_insts,new_sub_decisions):
+                sub_trace.with_decision(new_sub_inst,new_sub_decision,True)
+            BB = list(sub_trace.decisions.values())
+            print(check_decision_same(AA,BB),max_value)
+            assert check_decision_same(AA,BB), "Not same"
