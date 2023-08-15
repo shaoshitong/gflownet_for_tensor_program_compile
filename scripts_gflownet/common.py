@@ -9,6 +9,7 @@ import tvm.meta_schedule as ms
 ####################################
 ##### Network Utilities
 ####################################
+ROOT_DIR = "dataset"
 def convert_to_nhwc(mod):
     """Convert to NHWC layout"""
     desired_layouts = {
@@ -39,9 +40,9 @@ def log_line(record, out_file):
 ##### Dataset Utilities
 ####################################
 
-NETWORK_INFO_FOLDER = 'dataset/network_info'
-TO_MEASURE_PROGRAM_FOLDER = 'dataset/to_measure_programs'
-MEASURE_RECORD_FOLDER = 'dataset/measure_records'
+NETWORK_INFO_FOLDER = f'{ROOT_DIR}/network_info'
+TO_MEASURE_PROGRAM_FOLDER = f'{ROOT_DIR}/to_measure_programs'
+MEASURE_RECORD_FOLDER = f'{ROOT_DIR}/measure_records'
 
 def clean_name(x):
     x = str(x)
@@ -59,6 +60,10 @@ def get_task_info_filename(network_key, target):
 
 def get_to_measure_filename(task):
     task_key = (task.workload_key, str(task.target.kind))
+    return f"{TO_MEASURE_PROGRAM_FOLDER}/{clean_name(task_key)}.json"
+
+def get_to_measure_filename_meta_schedule(task):
+    task_key = (task.task_name, str(task.target.kind), hash(tvm.ir.save_json(task.mod)))
     return f"{TO_MEASURE_PROGRAM_FOLDER}/{clean_name(task_key)}.json"
 
 def get_measure_record_filename(task, target=None):

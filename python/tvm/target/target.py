@@ -61,7 +61,7 @@ class Target(Object):
 
     - :py:func:`tvm.target.arm_cpu` create arm_cpu target
     - :py:func:`tvm.target.cuda` create CUDA target
-    - :py:func:`tvm.target.rocm` create ROCM target
+    - :py:func:`tvm.target.rocm` create ROCM target./dataset/sample_candidate
     - :py:func:`tvm.target.mali` create Mali target
     - :py:func:`tvm.target.intel_graphics` create Intel Graphics target
     """

@@ -103,6 +103,7 @@ def sample_candidates(task, task_name, model_name):
     -------
     None
     """
+    
     candidate_path = os.path.join(
         args.candidate_cache_dir, model_name, task_name + "_candidates.json"
     )
@@ -126,7 +127,7 @@ def sample_candidates(task, task_name, model_name):
         search_strategy=strategy,
         task_name=task_name,
     )
-    # context.initialize()
+    #context.initialize()
     context.pre_tuning(
         max_trials=args.max_trials_per_task,
         num_trials_per_iter=args.num_trials_per_iter,
@@ -154,12 +155,17 @@ def sample_candidates(task, task_name, model_name):
     database.commit_workload(context.mod)
     for state in all_states:
         database.commit_tuning_record(ms.database.TuningRecord(state.trace, workload))
+        
 
 
 args = _parse_args()  # pylint: disable=invalid-name
 
 
 def main():
+    # args.task_cache_dir = "./dataset_new/tasks"
+    # args.candidate_cache_dir = "./dataset_new/candidates"
+    # args.target = "llvm -num-cores 56"
+    
     if not os.path.isdir(args.task_cache_dir):
         raise Exception("Please provide a correct task cache dir.")
     try:

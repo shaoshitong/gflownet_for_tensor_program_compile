@@ -4931,7 +4931,6 @@ def from_pytorch(
     converter = PyTorchOpConverter(prelude, default_dtype, use_parser_friendly_name)
 
     graph = script_module.graph.copy()
-
     # Check if lower_all_tuples pass can be enabled
     graph_inputs = list(graph.inputs())
     for inp in graph_inputs:

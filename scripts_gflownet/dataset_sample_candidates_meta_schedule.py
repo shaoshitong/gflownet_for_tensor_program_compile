@@ -106,6 +106,8 @@ def sample_candidates(task, task_name, model_name):
     candidate_path = os.path.join(
         args.candidate_cache_dir, model_name, task_name + "_candidates.json"
     )
+    if os.path.exists(candidate_path):
+        return
     workload_path = os.path.join(args.candidate_cache_dir, model_name, task_name + "_workload.json")
     database = ms.database.JSONDatabase(
         path_workload=workload_path,
@@ -139,6 +141,9 @@ def sample_candidates(task, task_name, model_name):
     num_retry, itr = 0, 0
     states = sample_init_population(strategy, args.init_population_size)
     while len(all_states) < args.num_samples_per_task and num_retry < args.max_retry_per_task:
+        if len(states) == 0:
+            states = sample_init_population(strategy, args.init_population_size)
+            num_retry += 1
         states = evolve_with_cost_model(strategy, states, len(states))
         all_states += states
         if len(states) == 0:
@@ -167,12 +172,12 @@ def main():
     except OSError:
         print(f"Directory {args.candidate_cache_dir} cannot be created successfully.")
 
-    task_paths = sorted(glob.glob(os.path.join(args.task_cache_dir, "*.json")))[
-        args.file_group * 10 : (args.file_group + 1) * 10
-    ]
+    task_paths = sorted(glob.glob(os.path.join(args.task_cache_dir, "*.json")))
     print(f"Selected models: {task_paths}")
+    print(f"The number of models: {len(task_paths)}")
+    task_paths = task_paths
     for num, task_path in enumerate(task_paths):
-        print(f"Processing model {num} ...")
+        print(f"Processing model {num} {task_path} ...")
         with open(task_path, "rb") as file:
             tasks = file.readlines()
         model_name = task_path.split("/")[-1][len("relay-") :][: -len("_extracted_tasks.json")]

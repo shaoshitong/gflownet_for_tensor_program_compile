@@ -21,7 +21,6 @@ from typing import Dict, Union
 import tvm._ffi
 from tvm._ffi.base import string_types
 from tvm.runtime import Scriptable
-from tvm.runtime.object import Object
 
 from . import _ffi_api
 from . import expr as _expr

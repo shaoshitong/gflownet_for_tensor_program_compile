@@ -73,8 +73,9 @@ def current_line_number():
 
 
 def forkseed(rand_state):
-    rand_state = int(rand_state)
-    return (rand_state * 32767) % 1999999973
+    rand_state = int(rand_state+random.random()*1999999973)
+    new_rand_state = (rand_state * 32767) % 1999999973
+    return new_rand_state
 
 def SampleInt(rand_state:np.int64, min_inclusive:int,max_exclusive:int):
     assert min_inclusive< max_exclusive, "ValueError: max_exclusive must be greater than min_inclusive."
@@ -114,7 +115,6 @@ def list_swap(list1, list2):
     list1[:], list2[:] = list2[:], list1[:]
 
 
-"""Need to implement"""
 class PerThreadData:
     #auxiliary class for MyEvolutionarySearch
     mod :IRModule = None
@@ -151,7 +151,7 @@ class PerThreadData:
         return idx
     
     @staticmethod
-    def default_mutator_sampler(genetic_mutate_prob,mutator_probs,rand_state):
+    def default_mutator_sampler(genetic_mutate_prob, mutator_probs,rand_state):
         np.random.seed(rand_state)
         mutators = []
         mutators.append(None)
@@ -342,7 +342,7 @@ class State:
                 trace = Trace(self.design_spaces[design_space_index].insts, {})
                 sch = pp.Apply(mod, trace, rand_state)
                 if sch is not None:
-                    results[trace_id] = sch 
+                    results[trace_id] = sch
             for i in range(num):
                 f_proc_unmeasured(i,i)
             found_new  = False
@@ -418,10 +418,17 @@ class State:
         assert self.st < self.ed, f"check fail: {self.st} < {self.ed}"
         pop = self.searchstrategy.population_size
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
-        measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio) # TODO: ERROR
+
+        measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio)
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
+        count_set = set()
+        for unmea in unmeasured:
+            s = str(unmea.mod)
+            count_set.add(s)
+        # unmeasured[0].mod.show()
+        # unmeasured[0].trace.show()
         if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
             self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
             return None
@@ -434,6 +441,7 @@ class State:
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
         if picks is None:
             self.num_empty_iters+=1
+            
             if self.num_empty_iters >= self.searchstrategy.num_empty_iters_before_early_stop:
                 return None
         return AssembleCandidates(picks)
@@ -464,6 +472,7 @@ class State:
                     if exists.Has(mod,shash) == False:
                         exists.Add(mod,shash)
                         heap.push(score,sch)
+
                         
                 if iter == self.searchstrategy.genetic_num_iters:
                     break
@@ -552,8 +561,8 @@ class GflowNetSearch(PySearchStrategy):
         self,
         *,
         context,
-        population_size = 512,
-        init_measured_ratio = 0.2,
+        population_size = 2048,
+        init_measured_ratio = 1.0,
         init_min_unmeasured = 50,
         max_fail_count = 5,
         genetic_num_iters = 4,
@@ -623,7 +632,6 @@ class GflowNetSearch(PySearchStrategy):
             The measure candidates generated, None if finished.
         """
         return self.state.GenerateMeasureCandidates()
-
 
     def notify_runner_results(
         self,
