@@ -20,3 +20,4 @@ The tvm.meta_schedule.cost_model package.
 from .cost_model import CostModel, PyCostModel
 from .random_model import RandomModel
 from .xgb_model import XGBModel
+from .tlp_cost_model import tlpCostModel
