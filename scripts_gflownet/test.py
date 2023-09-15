@@ -20,7 +20,8 @@ if __name__ == "__main__":
         return binary_array
 
 
-    databases = load_all_files("/home/tvm/scripts_gflownet/dataset/measure_candidate")
+    databases = load_all_files("/home/imagenet/share/dataset/measure_candidate_v2")
+    
     import copy,tvm
     from tvm.tir.schedule import InstructionKind
     from dataset_embedding import deep_copy_map
@@ -38,6 +39,9 @@ if __name__ == "__main__":
             embedding_results,embedding_conditions,count_ptr_list = gm(sub_insts,sub_decisions,True)
             # Now, disturb the decision's value
             
+            for er in embedding_results:
+                print(er.shape,end=" ")
+            print("")
             new_sub_decisions = deep_copy_map(sub_decisions)
             for key,value in new_sub_decisions.items():
                 if key.kind == InstructionKind.get("SampleCategorical"):
