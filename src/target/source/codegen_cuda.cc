@@ -924,8 +924,11 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
   } else if (op->op.same_as(builtin::ptx_commit_group())) {
     this->stream << "__asm__ __volatile__(\"cp.async.commit_group;\");\n\n";
   } else if (op->op.same_as(builtin::ptx_wait_group())) {
-    std::string N = this->PrintExpr(op->args[0]);
-    this->stream << "__asm__ __volatile__(\"cp.async.wait_group " + N + ";\");\n\n";
+    // NOTE: this is BUG code. Cause RuntimeErron: parallel for dynamic error with evolutionary_search.cc:496: ValueError: Cannot postprocess the trace: 
+    // std::string N = this->PrintExpr(op->args[0]); this->stream << "__asm__
+    // __volatile__(\"cp.async.wait_group " + N + ";\");\n\n";
+    int n = Downcast<IntImm>(op->args[0])->value;
+    this->stream << "__asm__ __volatile__(\"cp.async.wait_group " << n << ";\");\n\n";
   } else if (op->op.same_as(builtin::ptx_ldg32())) {
     /*
     asm volatile (
