@@ -51,7 +51,7 @@ set(USE_LLVM ON)
 set(USE_RELAY_DEBUG ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE "Debug")
-set(USE_LLVM "llvm-config --link-static")
+# set(USE_LLVM "llvm-config --link-static")
 
 # Whether enable ROCM runtime
 #
