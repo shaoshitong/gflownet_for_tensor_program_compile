@@ -55,7 +55,7 @@ b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
 c_nd = tvm.nd.empty((128, 128), "float32")
 # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
 lib = tvm.build(sch.mod, target="cuda")
-lib = tvm.build(sch.mod, target=target)
+# lib = tvm.build(sch.mod, target=target)
 
 # f_timer_after = lib.time_evaluator("main", tvm.cpu())
 # print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
