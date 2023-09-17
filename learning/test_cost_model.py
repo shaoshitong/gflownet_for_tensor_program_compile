@@ -6,6 +6,9 @@ from tvm import meta_schedule as ms
 from tvm.ir.module import IRModule
 from tvm.script import tir as T
 
+# NOTE: Must import TransformerModule -- pickle cann't find class
+from tvm.meta_schedule.cost_model.tlp_cost_model_train import TransformerModule
+
 import os
 
 def code2html(code):
@@ -34,7 +37,8 @@ class MyModule:
                 C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
 
 
-target = "llvm --num-cores=56"
+# target = "llvm --num-cores=56"
+target = "nvidia/nvidia-a100"
 database = ms.tune_tir(
     mod=MyModule,
     max_trials_global=64,
@@ -42,15 +46,18 @@ database = ms.tune_tir(
     #strategy = "gflownet",#evolution_python
     target=target,
     work_dir="./tune_tmp",
-    #cost_model="tlp_cost_model",
+    # cost_model="tlp_costmodel",
     task_name="main",
 )
 sch = ms.tir_integration.compile_tir(database, MyModule, target)
 a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
 b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
 c_nd = tvm.nd.empty((128, 128), "float32")
-lib = tvm.build(sch.mod, target)
-f_timer_after = lib.time_evaluator("main", tvm.cpu())
-print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
+# NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
+lib = tvm.build(sch.mod, target="cuda")
+# lib = tvm.build(sch.mod, target=target)
+
+# f_timer_after = lib.time_evaluator("main", tvm.cpu())
+# print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 sch.trace.show()
 IPython.display.HTML(code2html(sch.mod.script()))
