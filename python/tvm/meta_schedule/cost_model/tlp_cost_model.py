@@ -3,20 +3,22 @@ import torch
 from typing import List
 
 import numpy as np
-import tvm
-import tvm.testing
-from tvm.runtime import NDArray
-from tvm.meta_schedule.cost_model import PyCostModel, RandomModel, XGBModel
-from tvm.meta_schedule.cost_model.xgb_model import PackSum, _get_custom_call_back
-from tvm.meta_schedule.feature_extractor import FeatureExtractor,PerStoreFeature
-from tvm.meta_schedule.runner import RunnerResult
-from tvm.meta_schedule.search_strategy import MeasureCandidate
-from tvm.meta_schedule.tune_context import TuneContext
-from tvm.meta_schedule.utils import derived_object
-from tvm.script import tir as T
-from tvm.tir.schedule.schedule import Schedule
-import tvm.meta_schedule as ms
+
+from ...contrib.tar import tar, untar
+from ...runtime import NDArray
+from ..cost_model import PyCostModel
+from ..feature_extractor import FeatureExtractor, PerStoreFeature
+from ..logging import get_logger
+from ..runner import RunnerResult
+from ..search_strategy import MeasureCandidate
+from ..utils import cpu_count, derived_object, shash2hex
+from .metric import max_curve
+from ..tune_context import TuneContext
+from typing import Dict, List, NamedTuple, Optional, Tuple
 from .tlp_cost_model_train import *
+# from .tlp_cost_model_train import TransformerModule
+
+# from tvm.meta_schedule.cost_model.tlp_cost_model_train import TransformerModule
 
 
 def extract_features(
@@ -67,13 +69,20 @@ def extract_features(
 
 @derived_object
 class tlpCostModel(PyCostModel):
-    
-    def __init__(self, *, device='cuda') -> None:
+    # NOTE: cuda:7 is corresponding to 
+    def __init__(self, *, device='cuda:7') -> None:
         super().__init__()
+        # print("----------------------------Enter __init__ func")
         self.device = device
+        # TODO: 数据集中 是否存在class的信息，否则需要进行修改！
         self.loss_func = LambdaRankLoss(self.device)
-    def load(self, path: str = "./tlp_model_14.pkl") -> None:
+        # NOTE: For load() must call in __init__().
+        self.load()
+        # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
+    def load(self, path: str = "/root/kongdehao/model/tlp_model_14.pkl") -> None:
+        # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
         with open(path, 'rb') as f:
+            # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
             self.model = pickle.load(f)  
         self.model.to(self.device)
           
@@ -91,7 +100,7 @@ class tlpCostModel(PyCostModel):
         self.model.eval()
         features, _ = extract_features(context, candidates)
         val_dataloader = SegmentDataLoader(
-            features,shuffle=False
+            features, shuffle=False
         )
         pred_results = []
         for batch_data,_ in val_dataloader:

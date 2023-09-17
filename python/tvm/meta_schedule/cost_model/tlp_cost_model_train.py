@@ -35,10 +35,9 @@ import argparse
 import multiprocessing
 import json
 
-import tvm
 from torch.nn.utils.rnn import pad_sequence
-from tvm.meta_schedule.utils import derived_object, shash2hex
-from tvm.meta_schedule.logging import get_logger
+from ..utils import derived_object, shash2hex
+from ..logging import get_logger
 
 class FeatureGroup:
     """Feature group
@@ -152,7 +151,10 @@ class SegmentDataLoader:
         self.iter_order = self.pointer = None
 
         self.data_steps = pad_sequence([torch.tensor(f) for f in features], batch_first=True)
-        self.labels = torch.FloatTensor(results)
+        # NOTE: fix bug for results is None in tlp predict
+        self.labels = None
+        if not results is None:
+            self.labels = torch.FloatTensor(results)
          
 
     def __len__(self):
@@ -178,7 +180,10 @@ class SegmentDataLoader:
         batch_datas_steps = self.data_steps[indices]
         batch_datas_steps = nn.utils.rnn.pad_sequence(
             batch_datas_steps, batch_first=True)
-        batch_labels = self.labels[indices]
+        # NOTE: fix bug for self.labels is None in tlp predict
+        batch_labels = None
+        if not self.labels is None:
+            batch_labels = self.labels[indices]
 
         return (batch_datas_steps, batch_labels)
 
@@ -417,8 +422,10 @@ set_seed(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    # NOTE: We can conver to cuda:0, but retrain pkl model which cuda is cuda:7
     parser.add_argument("--cuda", type=str, default='cuda:7')
-    parser.add_argument("--dataset_path", type=str, default='./dataset_a100/extract_features')
+    # NOTE: Use you defined dataset path
+    parser.add_argument("--dataset_path", type=str, default='/root/share/dataset/extract_features')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
