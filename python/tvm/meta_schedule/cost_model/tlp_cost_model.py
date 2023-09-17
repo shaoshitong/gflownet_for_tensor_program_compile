@@ -83,10 +83,10 @@ class tlpCostModel(PyCostModel):
     def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
         # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
         if not os.path.exists(path):
-            path = "../"+path
+            path = "../" + path
             if not os.path.exists(path):
                 raise NotImplementedError(f"{path} not exists!")
-                
+
         with open(path, 'rb') as f:
             # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
             self.model = pickle.load(f)  
@@ -106,7 +106,8 @@ class tlpCostModel(PyCostModel):
     def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
         self.model.eval()
         features, _ = extract_features(context, candidates)
-        val_dataloader = SegmentDataLoader(
+        # NOTE: This is for speed up predict!
+        val_dataloader = SegmentDataloder_new(
             features, shuffle=False
         )
         pred_results = []

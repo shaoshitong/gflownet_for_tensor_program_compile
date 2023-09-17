@@ -178,15 +178,58 @@ class SegmentDataLoader:
     def _fetch_indices(self, indices):
     
         batch_datas_steps = self.data_steps[indices]
-        batch_datas_steps = nn.utils.rnn.pad_sequence(
-            batch_datas_steps, batch_first=True)
+        # batch_datas_steps = nn.utils.rnn.pad_sequence(
+        #     batch_datas_steps, batch_first=True)
+        
+        if str(torch.__version__)[0] == '0':
+            batch_datas_steps = nn.utils.rnn.pad_sequence(
+                batch_datas_steps, batch_first=True)
+        else:
+            batch_datas_steps = nn.utils.rnn.pad_sequence(
+                [s[0] for s in torch.split(batch_datas_steps,1,0)], batch_first=True) 
+        
         # NOTE: fix bug for self.labels is None in tlp predict
-        batch_labels = None
+        batch_labels = 0
         if not self.labels is None:
             batch_labels = self.labels[indices]
 
         return (batch_datas_steps, batch_labels)
 
+from torch.utils.data import DataLoader,Dataset
+
+class SegmentDataset(Dataset):
+    def __init__(self,
+        features,
+        results=None):
+        self.data_size = len(features)
+        self.data_steps = pad_sequence([torch.tensor(f) for f in features], batch_first=True)
+        if results is None:
+            self.labels = torch.Tensor([0 for _ in range(self.data_size)])
+        else:
+            self.labels = torch.Tensor(results)
+
+    def __len__(self):
+        return self.data_size
+
+    def __getitem__(self, indices):
+        batch_datas_steps = self.data_steps[indices]
+        if str(torch.__version__)[0] == '0':
+            batch_datas_steps = nn.utils.rnn.pad_sequence(
+                batch_datas_steps[None,...], batch_first=True)[0]
+        else:
+            batch_datas_steps = nn.utils.rnn.pad_sequence(
+                (batch_datas_steps,), batch_first=True)[0]
+        batch_labels = self.labels[indices]
+
+        return (batch_datas_steps, batch_labels)
+
+def SegmentDataloder_new(features,results=None,batch_size=128,shuffle=True,num_worker=4):
+    dataset = SegmentDataset(features,results)
+    dataloader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            shuffle=shuffle,
+                            num_workers=num_worker)
+    return dataloader
 
 
 class LambdaRankLoss(nn.Module):
@@ -425,7 +468,7 @@ if __name__ == "__main__":
     # NOTE: We can conver to cuda:0, but retrain pkl model which cuda is cuda:7
     parser.add_argument("--cuda", type=str, default='cuda:7')
     # NOTE: Use you defined dataset path
-    parser.add_argument("--dataset_path", type=str, default='/root/share/dataset/extract_features')
+    parser.add_argument("--dataset_path", type=str, default='/root/data/share/dataset/extract_features')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
