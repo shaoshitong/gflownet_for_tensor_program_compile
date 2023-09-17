@@ -79,10 +79,13 @@ class tlpCostModel(PyCostModel):
         # NOTE: For load() must call in __init__().
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
-    def load(self, path: str = "/root/kongdehao/model/tlp_model_14.pkl") -> None:
-        # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
+    def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
+        if not os.path.exists(path):
+            path = "../" + path
+            if not os.path.exists(path):
+                raise NotImplementedError(f"{path} not exists!")
+
         with open(path, 'rb') as f:
-            # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
             self.model = pickle.load(f)  
         self.model.to(self.device)
           
@@ -99,12 +102,13 @@ class tlpCostModel(PyCostModel):
     def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
         self.model.eval()
         features, _ = extract_features(context, candidates)
-        val_dataloader = SegmentDataLoader(
+        val_dataloader = SegmentDataloder_new(
             features, shuffle=False
         )
         pred_results = []
         for batch_data,_ in val_dataloader:
             batch_data = batch_data.to(self.device)
+            print(batch_data.shape)
             outputs = self.model(batch_data)
             pred_results.extend(outputs.detach().cpu().numpy())
         return pred_results
