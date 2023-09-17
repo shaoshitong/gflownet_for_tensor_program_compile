@@ -38,7 +38,7 @@ from ..utils import _get_default_str
 class CostModel(Object):
     """Cost model."""
 
-    CostModelType = Union["CostModel", Literal["xgb", "mlp", "random"]]
+    CostModelType = Union["CostModel", Literal["xgb", "mlp", "random","tlp_costmodel"]]
 
     def load(self, path: str) -> None:
         """Load the cost model from given file location.
@@ -114,8 +114,8 @@ class CostModel(Object):
 
         Parameters
         ----------
-        kind : Literal["xgb", "mlp", "random", "none"]
-            The kind of the cost model. Can be "xgb", "mlp", "random" or "none".
+        kind : Literal["xgb", "mlp", "random",,"tlp_costmodel" "none"]
+            The kind of the cost model. Can be "xgb", "mlp",,"tlp_costmodel" "random" or "none".
 
         Returns
         -------
@@ -139,9 +139,9 @@ class CostModel(Object):
             )
             return MLPModel(*args, **kwargs)  # type: ignore
         
-        #if kind == "tlp_costmodel":
-        #   from .tlp_cost_model import tlpCostModel
-        #   return tlpCostModel(*args, **kwargs)
+        if kind == "tlp_costmodel":
+          from .tlp_cost_model import tlpCostModel
+          return tlpCostModel(*args, **kwargs)
         
         if kind == "none":
             return None  # no cost model required
