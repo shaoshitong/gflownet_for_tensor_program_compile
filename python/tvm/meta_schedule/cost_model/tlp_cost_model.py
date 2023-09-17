@@ -79,8 +79,14 @@ class tlpCostModel(PyCostModel):
         # NOTE: For load() must call in __init__().
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
-    def load(self, path: str = "/root/kongdehao/model/tlp_model_14.pkl") -> None:
+        # NOTE: update relative path to tlp model
+    def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
         # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
+        if not os.path.exists(path):
+            path = "../"+path
+            if not os.path.exists(path):
+                raise NotImplementedError(f"{path} not exists!")
+                
         with open(path, 'rb') as f:
             # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
             self.model = pickle.load(f)  
