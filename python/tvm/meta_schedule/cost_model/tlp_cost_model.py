@@ -96,6 +96,7 @@ class tlpCostModel(PyCostModel):
     ) -> None:
         pass
     
+    @torch.no_grad()
     def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
         self.model.eval()
         features, _ = extract_features(context, candidates)
