@@ -16,7 +16,7 @@ def normalize_score(score,
                     _max = 4.567233072666666,
                     _tau = 1):
     score = (score - _mean) / (_val ** (1/2))
-    return torch.sigmoid(score / _tau)
+    return torch.log(torch.sigmoid(score / _tau))
     
 if __name__ == "__main__":
 
