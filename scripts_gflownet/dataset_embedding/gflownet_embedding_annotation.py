@@ -15,6 +15,8 @@ from tvm.target import Target
 from tvm.tir.schedule import Trace
 from tvm.tir.schedule import InstructionKind,Instruction
 import numpy as np
+
+# Need for encoding type
 def get_useful_keys():
     KEYS = [
         InstructionKind.get("SampleCategorical"),
@@ -67,7 +69,7 @@ class EmbeddingAnnotation:
                 if str(name) == "meta_schedule.cooperative_fetch":
                     ann_val = sub_inst.inputs[1]
                     annotations.add(ann_val)
-                    
+                # only search unroll_explicit & implicit annotation
                 elif str(name) == "meta_schedule.unroll_explicit" or str(name) ==  "meta_schedule.unroll_implicit":
                     ann_insts.append(sub_inst)
                     
@@ -111,6 +113,7 @@ class EmbeddingAnnotation:
                 probs+=[0]
             while len(values)<EmbeddingAnnotation.embedding_len:
                 values+=[0]
+            # condition for identifying unroll_explicit & implicit
             if str(ann_inst.attrs[0]) == "meta_schedule.unroll_explicit":
                 condition = [1,0,0] + [old_len] + probs + values
             elif str(ann_inst.attrs[0]) == "meta_schedule.unroll_implicit":
