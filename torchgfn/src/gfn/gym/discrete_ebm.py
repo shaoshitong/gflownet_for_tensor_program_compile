@@ -198,6 +198,7 @@ class DiscreteEBM(DiscreteEnv):
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
         canonical = raw_states
+        # NOTE: modify for detach().view(-1)
         return self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
 
     def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:

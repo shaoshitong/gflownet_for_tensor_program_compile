@@ -407,7 +407,7 @@ class State:
                 results.append(sch)
         
         return results
-            
+    # NOTE: important!!! -- adapt to GFlowNet
     def GenerateMeasureCandidates(self)->Optional[List[MeasureCandidate]]:
         if(self.st >= self.max_trials):
             return None
@@ -418,10 +418,11 @@ class State:
         assert self.st < self.ed, f"check fail: {self.st} < {self.ed}"
         pop = self.searchstrategy.population_size
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
-
+        # 1. pick best measure -- init is {None}
         measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio)
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
+        # 2. init popu
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         count_set = set()
         for unmea in unmeasured:
@@ -434,9 +435,11 @@ class State:
             return None
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)" % len(unmeasured))
         inits = measured + unmeasured
+        # 3. get measure result from cost model
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num) 
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
+        # 4. avoid overfitting
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
         if picks is None:
@@ -479,7 +482,7 @@ class State:
                 for data in self.per_thread_data_:
                     data.Set(scores,self.searchstrategy.genetic_mutate_prob,self.searchstrategy.mutator_probs)
             
-
+            # NOTE: generate part: GFlowNet work here!
             with Profiler.timeit("EvoSearch/Evolve/Mutation"):
                 pp = ThreadedTraceApply(self.searchstrategy.postprocs)
                 cbmask = ConcurrentBitmask(self.searchstrategy.population_size)

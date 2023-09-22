@@ -55,7 +55,8 @@ work_dir = "./tune_tmp"
 task_name = "main"
 seed = None
 space = "post-order-apply"
-strategy = "evolutionary"
+# NOTE: for test gflownet (current version is evolutionary search)
+strategy = "gflownet"
 num_tuning_cores = "physical"
 builder = "local"
 runner = "local"

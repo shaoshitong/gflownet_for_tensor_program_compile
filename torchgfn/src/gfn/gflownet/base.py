@@ -106,6 +106,7 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
             AssertionError: when actions and states dimensions mismatch.
         """
         # fill value is the value used for invalid states (sink state usually)
+        # NOTE: need for double check!
         if trajectories.is_backward:
             
             valid_states = trajectories.states[~trajectories.states.is_initial_state]
@@ -219,12 +220,13 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
         TT["n_trajectories", torch.float],
     ]:
         """Given a batch of trajectories, calculate forward & backward policy scores."""
+        # log pf and log pb along traj: 15+15*96 + 2(special state)
         log_pf_trajectories, log_pb_trajectories = self.get_pfs_and_pbs(trajectories)
 
         assert log_pf_trajectories is not None
         total_log_pf_trajectories = log_pf_trajectories.sum(dim=0)
         total_log_pb_trajectories = log_pb_trajectories.sum(dim=0)
-
+        # reward info for supervising 
         log_rewards = trajectories.log_rewards.clamp_min(self.log_reward_clip_min)  # type: ignore
         if torch.any(torch.isinf(total_log_pf_trajectories)) or torch.any(
             torch.isinf(total_log_pb_trajectories)
@@ -233,6 +235,7 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
         return (
             total_log_pf_trajectories,
             total_log_pb_trajectories,
+            # ret pf - pb - logR. caller will add logZ
             total_log_pf_trajectories - total_log_pb_trajectories - log_rewards,
         )
 

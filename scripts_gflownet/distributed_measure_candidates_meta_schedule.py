@@ -179,6 +179,8 @@ args = _parse_args()  # pylint: disable=invalid-name
 
 
 def main():
+    # NOTE: skip already successful candidates & test rest failed candidates -- test again failed part
+    # each run with different seed(), diff init popu, some may fail that are invalid
     skip_candidates_path =  [] #"/home/tvm/scripts_gflownet/dataset/sample_candidate/inception_v3-None-4,3,299,299/fused_nn_conv2d_add_nn_relu_22_candidates.json",
         # "/home/tvm/scripts_gflownet/dataset/sample_candidate/mobilenet_v2-None-4,3,240,240/fused_nn_conv2d_add_clip_3_candidates.json",
         # "/home/tvm/scripts_gflownet/dataset/sample_candidate/mobilenet_v2-None-8,3,240,240/fused_nn_adaptive_avg_pool2d_candidates.json",

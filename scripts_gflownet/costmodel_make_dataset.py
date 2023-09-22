@@ -103,10 +103,22 @@ def extract_features(
     def _feature(feature: NDArray) -> np.ndarray:
         return feature.numpy().astype("float32")
 
+    # NOTE: score is runtime, val is variance, tau is temperature factor
+    def normalize_score(score,
+                        _mean = 0.003680646535107316, 
+                        _val = 0.0012118761480652196,
+                        _min = 2.8831801089918256e-06,
+                        _max = 4.567233072666666,
+                        _tau = 1):
+        score = (score - _mean) / (_val ** (1/2))
+        return torch.log(torch.sigmoid(score / _tau))
+
     def _mean_cost(res: RunnerResult) -> float:
         if not res.run_secs:
             return 1e10
-        return float(np.median([float(s) for s in res.run_secs]))
+        # NOTE: convert into min()
+        # return float(np.median([float(s) for s in res.run_secs]))
+        return float(normalize_score(np.min([float(s) for s in res.run_secs])))
 
     new_features = [_feature(x) for x in extractor.extract_from(context, candidates)]
     new_mean_costs = (
@@ -144,7 +156,7 @@ def handle_json(model_dir:str):
             workload_paths.append(json_file)
         elif json_file.endswith("_candidates.json"):
             candidate_path.append(json_file)
-    #handhle json file
+    #handle json file
     extractor_feature = PerStoreFeature(extract_workload=True)
     for workload_path in tqdm(workload_paths):
         try:
@@ -193,13 +205,13 @@ def make_all_dataset():
 
 if __name__ == "__main__":
     parse = argparse.ArgumentParser()
-    parse.add_argument("--dataset_path",type=str, default= './dataset_a100/measure_candidate')
+    parse.add_argument("--dataset_path",type=str, default= '/root/share/dataset/measure_candidate_v2')
     parse.add_argument("--save_folder", type=str, default='')
-    parse.add_argument("--target",type=str, default='cuda')
+    parse.add_argument("--target",type=str, default="cuda")
 
     args = parse.parse_args()
     
     if args.save_folder == '':
-        args.save_folder = os.path.join(os.path.dirname(args.dataset_path), 'extract_features')
+        args.save_folder = os.path.join(os.path.dirname(args.dataset_path), 'extract_features_v2')
 
     make_all_dataset()    

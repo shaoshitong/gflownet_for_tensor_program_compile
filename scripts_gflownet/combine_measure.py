@@ -1,3 +1,6 @@
+'''
+    Merge two measure_candidates into one
+'''
 from dataset_embedding import load_all_files,check_decision_same,GflowNetEmbedding
 import tvm
 from tvm.meta_schedule.module_equality import ModuleEquality
@@ -24,7 +27,7 @@ import os
 
 import tvm.meta_schedule as ms
 for database in databases:
-    
+    # measure_candidate_3 is output
     os.makedirs(os.path.join("/home/tvm/scripts_gflownet/dataset/measure_candidate_3/", database.path_workload.split("/")[-2]), exist_ok=True)
     new_database = ms.database.JSONDatabase(
         path_workload=database.path_workload.replace("measure_candidate","measure_candidate_3"),

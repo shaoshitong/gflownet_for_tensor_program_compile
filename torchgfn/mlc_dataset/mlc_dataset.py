@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 from tvm.meta_schedule.cost_model.tlp_cost_model_train import from_json,load_data
 from .dataset_embedding import GflowNetEmbedding, load_all_files
 
+# To make a GFlowNet dataset
 def gflownet_data_save(data_path,save_path):
     assert os.path.exists(data_path), f"{data_path} not exists!"
     databases = load_all_files(data_path)
@@ -16,7 +17,7 @@ def gflownet_data_save(data_path,save_path):
     
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    
+    # get min cost time from multiple measure runtime
     def _min_cost(res) -> float:
         if not res.run_secs:
             return 1e10
@@ -46,7 +47,8 @@ def gflownet_data_save(data_path,save_path):
                 else:
                     extend_embedding_0.append(torch.from_numpy(embedding.squeeze()))
                     print(extend_embedding_0[-1].shape,"11")
-   
+            # NOTE: Padding to max length for embeddings
+            # TODO: Need padding condition
             MAX_NUMBER = 15
             if len(extend_embedding_0)>0:            
                 extend_embedding_0 = torch.stack(extend_embedding_0, 0)
@@ -56,7 +58,7 @@ def gflownet_data_save(data_path,save_path):
                 extend_embedding_1 = torch.stack(extend_embedding_1, 0)
             else:
                 extend_embedding_1 = torch.zeros(MAX_NUMBER,96)
-            
+
             extend_embedding_0 = torch.cat([extend_embedding_0,
                                             torch.zeros(MAX_NUMBER - extend_embedding_0.shape[0],extend_embedding_0.shape[1]).to(extend_embedding_0.device)],0)
             extend_embedding_1 = torch.cat([extend_embedding_1,
@@ -74,12 +76,16 @@ def gflownet_data_save(data_path,save_path):
             last_condition = torch.cat([torch.from_numpy(embedding_condition.astype(int).reshape(-1)) for embedding_condition in embedding_conditions],0) # We do not need to translate it at a fine-grained level.
             last_ptr_list = torch.Tensor(count_ptr_list)
             print(last_embedding.shape,last_condition.shape,last_ptr_list.shape)
+            # NOTE: We define attr in dataset 
             np.savez(os.path.join(save_path,f'mlc_{count_ptr}.npz'),last_embedding = last_embedding, last_condition = last_condition, last_ptr_list = last_ptr_list, run_secs = min_cost)
             print(f"Successfully Save File mlc_{count_ptr}.npz")
             count_ptr+=1
     
-
+# dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda
+# GFlowNet prefer 0~9 format avoid invalid format [1, 0, 1] + extra mask -- GFlowNet output [0.3, 0.5, ..., 0.1] with 10 position
+# 15*96 is 0~1 for tile (质因数分解) allowing [0, 1, 1] not one-hot format -- GFlowNet output [[0.3, 0.7], [0.2, 0.8], [0.4, 0.6]]
 class MLCGflowNetDataset(Dataset):
+    # TODO: change without_condition=False & determine condition len in future 
     def __init__(self,all_files,without_condition=True, condition_embedding=200):
         self.all_files = all_files
         self.without_condition = without_condition
@@ -103,6 +109,7 @@ class MLCGflowNetDataset(Dataset):
             last_condition = torch.cat([last_condition,padding],0)
             return last_embedding,run_secs,last_condition,last_ptr_list
     
+# Load above GFlowNet Dataset
 def gflownet_data_load(save_path,
                        without_condition=True,
                        num_workers=4,
@@ -117,5 +124,6 @@ def gflownet_data_load(save_path,
     all_files = search_all_files(save_path)
     dataset = MLCGflowNetDataset(all_files,without_condition=without_condition)
     # A generative task without any validate dataset.
+    # DataLoader speed up data loader
     dataloader = DataLoader(dataset,batch_size=batch_size,num_workers=num_workers,shuffle=shuffle,pin_memory=pin_memory)
     return dataloader

@@ -10,7 +10,7 @@ from gfn.env import DiscreteEnv
 from gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
 from gfn.states import DiscreteStates, States
 
-
+# NOTE: need for double check for this file -- To implement MetaSchedule Env
 class EnergyFunction(nn.Module, ABC):
     """Base class for energy functions"""
 
@@ -48,16 +48,16 @@ class MetaScheduleEnv(DiscreteEnv):
                  device_str = "cpu",
                  preprocessor_name = "Identity"):
         
-        # action's [0,one_hot_ndim*one_hot_seq_len-1] represents the choice \
+        # action's [0,one_hot_ndim*one_hot_seq_len-1]==[0, 15*10-1] represents the choice \
         # of cuda_bind and annotation, while action's [one_hot_ndim*one_hot \
         # _seq_len,one_hot_ndim*one_hot_seq_ len+2*binary_ndim*binary_seq_l \
-        # en+1] represents the choice of sample_perfectile, while action's  \
+        # en+1]==[15*10, 15*10+2*15*96-1] represents the choice of sample_perfectile, while action's  \
         # [one_hot_ndim*one_hot_seq_len+2*binary_ndim*binary_seq_len+1] rep \
         # resents the choice of termination condition.
         
         # The dimension of the state is $\mathbb{R}^{one_hot_seq_len+binary \
-        # _seq_len*binary_ndim}$, where the first one_hot_seq_len values ar \
-        # e in the range of [0,one_hot_ndim] and the inverse binary_seq_len \
+        # _seq_len*binary_ndim}$==15+15*96, where the first one_hot_seq_len values ar \
+        # e in the range of [0,one_hot_ndim-1]==[0, 9] and the inverse binary_seq_len \
         # *binary_ndim values are in the range of [0,1].
         
         self.binary_ndim = binary_ndim
@@ -105,6 +105,7 @@ class MetaScheduleEnv(DiscreteEnv):
             n_actions = env.n_actions
             device = env.device
 
+            # NOTE: get random terminal state
             @classmethod
             def make_random_states_tensor(
                 cls, batch_shape: Tuple[int, ...]
@@ -167,6 +168,7 @@ class MetaScheduleEnv(DiscreteEnv):
                 # not -1. Similarly, state[:one_hot_seq_len:] is selectable as long \
                 # as it is not -1.
 
+                # NOTE: forward mask is valid position flag (-1) considering according to prim type (in condition)
                 self.forward_masks[..., :env.one_hot_ndim*env.one_hot_seq_len] = \
                     (self.tensor[..., :env.one_hot_seq_len] == -1)[...,None].expand(*self.tensor.shape[:-1],
                     env.one_hot_seq_len,env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1],env.one_hot_seq_len*env.one_hot_ndim)
@@ -188,8 +190,12 @@ class MetaScheduleEnv(DiscreteEnv):
                 # ition K of one_hot_seq_len, then it is computed as [K*one_hot_ndim \
                 # +action_value].
 
+                # NOTE: backward mask is valid position flag (not -1)
+
                 src = torch.full_like(self.tensor[..., :env.one_hot_seq_len], fill_value=1, dtype=torch.bool, device=self.tensor.device)
                 tar = torch.zeros_like(self.backward_masks[..., :env.one_hot_ndim*env.one_hot_seq_len], device=self.tensor.device).bool()
+                # convert [0, 5, 2, 7] into 0 + (5 + 10) + (2 + 10 + 10) ...
+                # 0 is first 10 pos, 5 is second 10 pos, 2 is third 10 pos 
                 index = self.tensor[..., :env.one_hot_seq_len] + (torch.arange(env.one_hot_seq_len, device=self.tensor.device) * env.one_hot_ndim)[None, ...]
                 mask = self.tensor[..., :env.one_hot_seq_len] >= 0
 
@@ -225,6 +231,7 @@ class MetaScheduleEnv(DiscreteEnv):
     def is_exit_actions(self, actions: TT["batch_shape"]) -> TT["batch_shape"]:
         return actions == self.n_actions - 1
     
+    # forward one step
     def maskless_step(
         self, states: States, actions: Actions
     ) -> TT["batch_shape", "state_shape", torch.float]:
@@ -236,6 +243,7 @@ class MetaScheduleEnv(DiscreteEnv):
         
         mask_0 = (actions.tensor < self.one_hot_ndim*self.one_hot_seq_len).squeeze(-1)
         index_0 = (actions.tensor / self.one_hot_ndim).long()
+        # fmod() 取余
         value_0 = torch.fmod(actions.tensor, self.one_hot_ndim).long()
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
             -1, index_0[mask_0], value_0[mask_0]  # Set indices to value_0[mask_0].
@@ -303,6 +311,7 @@ class MetaScheduleEnv(DiscreteEnv):
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
         canonical = raw_states
+        # energy is cost model
         return self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:

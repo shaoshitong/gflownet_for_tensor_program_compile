@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     # 1 - We define the environment
 
-    # 8 - Define the Energy Function
+    # 8 - Define the Energy Function -- Cost Model
     from gfn.utils.edm_model import mlp_ebm
     edm_model = mlp_ebm(28*28,256,1).cuda()
     
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     from torchvision.datasets import MNIST
     from torchvision import transforms
     from torch.utils.data import DataLoader,Dataset
-    dataset = MNIST(root="/home/imagenet/share/dataset/mnist",
+    dataset = MNIST(root="/root/share/dataset/mnist",
                     train=True,
                     download=True,
                     transform=transforms.Compose([

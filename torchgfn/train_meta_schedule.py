@@ -8,7 +8,7 @@ from gfn.samplers import Sampler
 from gfn.utils import NeuralNet  # NeuralNet is a simple multi-layer perceptron (MLP)
 from mlc_dataset import gflownet_data_load
 
-
+# NOTE: score is runtime, val is variance, tau is temperature factor
 def normalize_score(score,
                     _mean = 0.003680646535107316, 
                     _val = 0.0012118761480652196,
@@ -24,9 +24,13 @@ if __name__ == "__main__":
 
     # 1 - Define the Energy Function
     from gfn.utils.edm_model import mlp_ebm
+    # define states len
     state_len = 15 * 1 + 15 * 96
     action_len = 15 * 10 + 15 * 96 * 2 + 1 # add the terminal state
+    # NOTE: fake cost model for test
     edm_model = mlp_ebm(state_len,256,1).cuda()
+    # TODO: input TLP in energy, but we need align format
+     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
     env = MetaScheduleEnv(energy=edm_model,alpha=1,device_str="cuda")
 
     # 2 - We define the needed modules (neural networks)
@@ -69,8 +73,9 @@ if __name__ == "__main__":
     
     # 7 - Add the Meta-Schedule dataset
     import os,sys
-    mount_path = "/home/imagenet"
+    mount_path = "/root"
     root = os.path.join(mount_path,"share/dataset/gflownet_dataset")
+    # TODO: with condition 
     dataloader = gflownet_data_load(root,without_condition=True,num_workers=4,batch_size=16)
     
     train_iter  = iter(dataloader)
@@ -90,14 +95,17 @@ if __name__ == "__main__":
         states = env.States(x)
         f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
         b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
+        # TODO: real_y that for training fake cost model
         real_y = edm_model(x.float())
 
         # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
         # fake_y = edm_model(fake_x)
         edm_loss = ((real_y - score) ** 2).mean()
         optimizer.zero_grad()
+        # cost model real work place 
         f_loss = gfn.loss(env, f_trajectories)
         b_loss = gfn.loss(env, b_trajectories)
+        # TODO: remove edm_loss 
         loss = b_loss + f_loss + edm_loss
         loss.backward()
         optimizer.step()
