@@ -11,7 +11,7 @@ from gfn.samplers import Sampler
 from gfn.states import DiscreteStates
 
 
-class FMGFlowNet(GFlowNet):
+class FMGFlowNet(GFlowNet[Tuple[DiscreteStates, DiscreteStates]]):
     r"""Flow Matching GFlowNet, with edge flow estimator.
 
     $\mathcal{O}_{edge}$ is the set of functions from the non-terminating edges
@@ -129,6 +129,6 @@ class FMGFlowNet(GFlowNet):
 
     def to_training_samples(
         self, trajectories: Trajectories
-    ) -> Tuple[DiscreteStates, DiscreteStates]:
+    ) -> tuple[DiscreteStates, DiscreteStates]:
         """Converts a batch of trajectories into a batch of training samples."""
         return trajectories.to_non_initial_intermediary_and_terminating_states()

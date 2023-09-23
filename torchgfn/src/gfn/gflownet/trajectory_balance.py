@@ -51,11 +51,7 @@ class TBGFlowNet(TrajectoryBasedGFlowNet):
             ValueError: if the loss is NaN.
         """
         del env  # unused
-        pf, pb, scores = self.get_trajectories_scores(trajectories)
-        log_reward = (- scores + pf - pb).mean()
-        pf = pf.mean()
-        pb = pb.mean()
-        # print("pf:",pf,"pb:",pb,"log_reward:",log_reward,"logZ:",self.logZ)
+        _, _, scores = self.get_trajectories_scores(trajectories)
         loss = (scores + self.logZ).pow(2).mean()
         if torch.isnan(loss):
             raise ValueError("loss is nan")

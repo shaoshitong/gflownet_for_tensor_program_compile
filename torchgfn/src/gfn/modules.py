@@ -49,7 +49,7 @@ class GFNModule(ABC, nn.Module):
     def __init__(
         self,
         module: nn.Module,
-        preprocessor = None,
+        preprocessor: Preprocessor | None = None,
         is_backward: bool = False,
     ) -> None:
         """Initalize the FunctionEstimator with an environment and a module.
@@ -73,8 +73,7 @@ class GFNModule(ABC, nn.Module):
         self.is_backward = is_backward
 
     def forward(self, states: States) -> TT["batch_shape", "output_dim", float]:
-        tensor = self.preprocessor(states)
-        out = self.module(tensor)
+        out = self.module(self.preprocessor(states))
         if not self._output_dim_is_checked:
             self.check_output_dim(out)
             self._output_dim_is_checked = True
@@ -142,7 +141,7 @@ class DiscretePolicyEstimator(GFNModule):
         self,
         module: nn.Module,
         n_actions: int,
-        preprocessor,
+        preprocessor: Preprocessor | None,
         is_backward: bool = False,
     ):
         """Initializes a estimator for P_F for discrete environments.

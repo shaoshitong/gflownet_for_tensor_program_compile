@@ -18,7 +18,7 @@ class Container(ABC):
         """Returns the number of elements in the container."""
 
     @abstractmethod
-    def __getitem__(self, index) -> Container:
+    def __getitem__(self, index: int | Sequence[int]) -> Container:
         """Subsets the container."""
 
     @abstractmethod

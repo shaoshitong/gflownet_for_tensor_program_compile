@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import ClassVar, Tuple, cast
+from typing import ClassVar, Literal, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -44,10 +44,10 @@ class DiscreteEBM(DiscreteEnv):
     def __init__(
         self,
         ndim: int,
-        energy = None,
+        energy: EnergyFunction | None = None,
         alpha: float = 1.0,
-        device_str = "cpu",
-        preprocessor_name = "Identity",
+        device_str: Literal["cpu", "cuda"] = "cpu",
+        preprocessor_name: Literal["Identity", "Enum"] = "Identity",
     ):
         """Discrete EBM environment.
 
@@ -91,11 +91,11 @@ class DiscreteEBM(DiscreteEnv):
             preprocessor=preprocessor,
         )
 
-    def make_States_class(self):
+    def make_States_class(self) -> type[DiscreteStates]:
         env = self
 
         class DiscreteEBMStates(DiscreteStates):
-            state_shape = (env.ndim,)
+            state_shape: ClassVar[tuple[int, ...]] = (env.ndim,)
             s0 = env.s0
             sf = env.sf
             n_actions = env.n_actions
@@ -159,13 +159,7 @@ class DiscreteEBM(DiscreteEnv):
     ) -> TT["batch_shape", "state_shape", torch.float]:
         # First, we select that actions that replace a -1 with a 0.
         # Remove singleton dimension for broadcasting.
-        
         mask_0 = (actions.tensor < self.ndim).squeeze(-1)
-        # print(mask_0.shape)
-        # print(states.tensor.shape,actions.tensor.shape)
-        # torch.Size([16, 784]) torch.Size([16, 1])                                                                                                                                                 
-        # torch.Size([16])
-        
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
             -1, actions.tensor[mask_0], 0  # Set indices to 0.
         )
@@ -197,9 +191,8 @@ class DiscreteEBM(DiscreteEnv):
 
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
-        canonical = raw_states
-        # NOTE: modify for detach().view(-1)
-        return self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
+        canonical = 2 * raw_states - 1
+        return -self.alpha * self.energy(canonical)
 
     def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
         """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""

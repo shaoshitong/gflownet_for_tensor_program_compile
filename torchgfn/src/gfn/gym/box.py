@@ -1,5 +1,5 @@
 from math import log
-from typing import ClassVar, Tuple
+from typing import ClassVar, Literal, Tuple
 
 import torch
 from torchtyping import TensorType as TT
@@ -19,7 +19,7 @@ class Box(Env):
         R1: float = 0.5,
         R2: float = 2.0,
         epsilon: float = 1e-4,
-        device_str = "cpu",
+        device_str: Literal["cpu", "cuda"] = "cpu",
     ):
         assert 0 < delta <= 1, "delta must be in (0, 1]"
         self.delta = delta
@@ -32,7 +32,7 @@ class Box(Env):
 
         super().__init__(s0=s0)
 
-    def make_States_class(self):
+    def make_States_class(self) -> type[States]:
         env = self
 
         class BoxStates(States):
@@ -48,7 +48,7 @@ class Box(Env):
 
         return BoxStates
 
-    def make_Actions_class(self):
+    def make_Actions_class(self) -> type[Actions]:
         env = self
 
         class BoxActions(Actions):

@@ -55,11 +55,11 @@ class Env(ABC):
         self.is_discrete = False
 
     @abstractmethod
-    def make_States_class(self):
+    def make_States_class(self) -> type[States]:
         """Returns a class that inherits from States and implements the environment-specific methods."""
 
     @abstractmethod
-    def make_Actions_class(self):
+    def make_Actions_class(self) -> type[Actions]:
         """Returns a class that inherits from Actions and implements the environment-specific methods."""
 
     def reset(
@@ -225,7 +225,7 @@ class DiscreteEnv(Env, ABC):
         super().__init__(s0, sf, device_str, preprocessor)
         self.is_discrete = True
 
-    def make_Actions_class(self):
+    def make_Actions_class(self) -> type[Actions]:
         env = self
         n_actions = self.n_actions
 

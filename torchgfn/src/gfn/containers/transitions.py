@@ -32,13 +32,13 @@ class Transitions(Container):
     def __init__(
         self,
         env: Env,
-        states = None,
-        actions = None,
-        is_done = None,
-        next_states = None,
+        states: States | None = None,
+        actions: Actions | None = None,
+        is_done: TT["n_transitions", torch.bool] | None = None,
+        next_states: States | None = None,
         is_backward: bool = False,
-        log_rewards = None,
-        log_probs = None,
+        log_rewards: TT["n_transitions", torch.float] | None = None,
+        log_probs: TT["n_transitions", torch.float] | None = None,
     ):
         """Instantiates a container for transitions.
 
@@ -123,7 +123,7 @@ class Transitions(Container):
         return self.states[self.is_done]
 
     @property
-    def log_rewards(self):
+    def log_rewards(self) -> TT["n_transitions", torch.float] | None:
         if self._log_rewards is not None:
             return self._log_rewards
         if self.is_backward:
@@ -177,7 +177,7 @@ class Transitions(Container):
             )
         return log_rewards
 
-    def __getitem__(self, index) -> Transitions:
+    def __getitem__(self, index: int | Sequence[int]) -> Transitions:
         """Access particular transitions of the batch."""
         if isinstance(index, int):
             index = [index]
