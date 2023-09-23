@@ -115,7 +115,7 @@ def list_swap(list1, list2):
 
 
 class PerThreadData:
-    #auxiliary class for MyEvolutionarySearch
+    # auxiliary class for MyEvolutionarySearch
     mod :IRModule = None
     rand_state : np.int64 = np.int64(-1)
     trace_sampler = None
@@ -126,7 +126,10 @@ class PerThreadData:
         self.rand_state = np.int64(-1)
         self.trace_sampler = None
         self.mutator_sampler = None
-    
+    # \brief Set the value for the trace and mutator samplers per thread.
+    # \param scores The predicted score for the given samples.
+    # \param genetic_mutate_prob The probability of mutation.
+    # \param mutator_probs The probability of each mutator as a dict.
     def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs):
         self.trace_sampler = partial(PerThreadData.default_trace_sampler,rand_state=self.rand_state,weights=scores)
         self.mutator_sampler = partial(PerThreadData.default_mutator_sampler,genetic_mutate_prob=genetic_mutate_prob,mutator_probs=mutator_probs,rand_state=self.rand_state)
@@ -594,6 +597,7 @@ class GflowNetSearch(PySearchStrategy):
         assert self.context.space_generator is not None, "ValueError: `TuneContext.space_generator` must be defined"
         assert self.context.space_generator.postprocs is not None, "ValueError: `TuneContext.space_generator.postprocs` must be defined"
         assert self.context.space_generator.mutator_probs is not None, "ValueError: `TuneContext.space_generator.mutator_probs` must be defined"
+        # NOTE: save context info as condition for GFN dataset
         self.context = context
         self.postprocs = context.space_generator.postprocs
         self.mutator_probs = context.space_generator.mutator_probs
@@ -619,6 +623,7 @@ class GflowNetSearch(PySearchStrategy):
         assert database is not None, "Context should not be None!"
         assert cost_model is not None, "Cost Model should not be None!"
         assert self.state is None, "ValueError: `PreTuning` is already invoked without corresponding `PostTuning`."
+        # NOTE: init state
         self.state = State(self.context,self,max_trials,num_trials_per_iter,design_spaces,database,cost_model)
 
     def post_tuning(self) -> None:

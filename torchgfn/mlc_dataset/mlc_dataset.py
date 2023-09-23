@@ -7,6 +7,7 @@ from tvm.meta_schedule.cost_model.tlp_cost_model_train import from_json,load_dat
 from .dataset_embedding import GflowNetEmbedding, load_all_files
 
 # To make a GFlowNet dataset
+# TODO: need for add workload(in context) info as condition
 def gflownet_data_save(data_path,save_path):
     assert os.path.exists(data_path), f"{data_path} not exists!"
     databases = load_all_files(data_path)
@@ -31,6 +32,7 @@ def gflownet_data_save(data_path,save_path):
                 print(f"Passing mlc_{count_ptr}.npz")
                 continue
             sub_sch = record.as_measure_candidate().sch
+            sub_sch.workload
             min_cost = _min_cost(record)
             sub_trace = sub_sch.trace
             sub_insts = sub_trace.insts

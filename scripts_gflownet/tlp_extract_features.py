@@ -16,7 +16,7 @@ from tvm.target import Target
 from tvm.meta_schedule.feature_extractor import PerStoreFeature
 from tvm.runtime import NDArray
 from tvm.meta_schedule.utils import  shash2hex
-import multiprocessing 
+import multiprocessing
 from multiprocessing.pool import ThreadPool
 
 
@@ -203,17 +203,17 @@ def make_all_dataset():
     os.makedirs(args.save_folder, exist_ok=True)
 
     #get path
-    # NOTE: Pool() is BUG, replace it with ThreadPool()
     # pool = multiprocessing.Pool()
-    pool = ThreadPool()
-    
+    pool = ThreadPool(128)
     model_dirs = glob.glob(os.path.join(args.dataset_path, "*"))
     for model_dir in model_dirs:
         # handle_json(model_dir)
-        pool.apply_async(handle_json, args=(model_dir,))
+        pool.apply_async(handle_json, (model_dir,))
     pool.close()
     pool.join()
-       
+
+
+
 
 if __name__ == "__main__":
     parse = argparse.ArgumentParser()
@@ -224,6 +224,7 @@ if __name__ == "__main__":
     args = parse.parse_args()
 
     if args.save_folder == '':
-        args.save_folder = os.path.join(os.path.dirname(args.dataset_path), 'extract_features_v2')
+        args.save_folder = os.path.join(os.path.dirname(args.dataset_path), 'extract_features_v2(min)')
 
     make_all_dataset()    
+
