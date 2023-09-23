@@ -50,7 +50,8 @@ class MyModule:
 mod = MyModule
 max_trials_global = 64
 num_trials_per_iter = 64
-target = "llvm --num-cores=1"
+# target = "llvm --num-cores=1"
+target = "cuda --max_threads_per_block 1024 --thread_warp_size 32 --max_shared_memory_per_block 49152"
 work_dir = "./tune_tmp"
 task_name = "main"
 seed = None
@@ -154,13 +155,13 @@ task_scheduler.tune(
     cost_model=cost_model,
 )
 
-sch = ms.tir_integration.compile_tir(database, MyModule, "llvm --num-cores=1")
+sch = ms.tir_integration.compile_tir(database, MyModule, target=target)
 a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
 b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
 c_nd = tvm.nd.empty((128, 128), "float32")
-lib = tvm.build(sch.mod, target="llvm")
-f_timer_after = lib.time_evaluator("main", tvm.cpu())
-print("Time cost of MyModule after tuning: %.3f ms" %
-      (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
+lib = tvm.build(sch.mod, target=target)
+# f_timer_after = lib.time_evaluator("main", tvm.cpu())
+# print("Time cost of MyModule after tuning: %.3f ms" %
+#       (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
 sch.trace.show()
 IPython.display.HTML(code2html(sch.mod.script()))

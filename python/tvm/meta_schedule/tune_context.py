@@ -117,12 +117,14 @@ class TuneContext(Object):
         if target is not None:
             if not isinstance(target, Target):
                 target = Target(target)
+        print("Target: ", target)
         if space_generator is not None:
             if not isinstance(space_generator, SpaceGenerator):
                 space_generator = SpaceGenerator.create(space_generator)
         if search_strategy is not None:
             if not isinstance(search_strategy, SearchStrategy):
                 if search_strategy == "gflownet":
+                    # NOTE: self is TuneContext()
                     kwargs = {"context":self}
                 else:
                     kwargs = {}

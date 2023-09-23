@@ -1,8 +1,6 @@
 
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set, Union
 
-import tvm
-
 # isort: off
 from typing_extensions import Literal
 # isort: on
@@ -11,7 +9,7 @@ import multiprocessing
 from multiprocessing import Value
 import tvm
 import copy
-from tvm._ffi import register_object
+
 from tvm.runtime import Object
 from tvm.tir.schedule import Schedule, Trace
 
@@ -51,7 +49,6 @@ import threading
 #zhangchunlei
 from tvm._ffi import register_object
 from tvm.ir import IRModule
-from tvm.tir.schedule import Schedule
 
 from ...tir.schedule import Trace
 from ..profiler import Profiler, _ffi_api
@@ -67,26 +64,27 @@ if TYPE_CHECKING:
     from ..tune_context import TuneContext
 
 import inspect
-
+# ret cur line No.
 def current_line_number():
     return inspect.currentframe().f_back.f_lineno
 
-
+# generate random seed
 def forkseed(rand_state):
     rand_state = int(rand_state+random.random()*1999999973)
     new_rand_state = (rand_state * 32767) % 1999999973
     return new_rand_state
-
+# min_inclusive & max_exclusive: [min, max)
 def SampleInt(rand_state:np.int64, min_inclusive:int,max_exclusive:int):
     assert min_inclusive< max_exclusive, "ValueError: max_exclusive must be greater than min_inclusive."
     if(min_inclusive+1 == max_exclusive):
         return min_inclusive
     rand_ = forkseed(rand_state)
+    # call np.random to generate [min, max-1]
     np.random.seed(rand_)
     dist = random.randint(min_inclusive, max_exclusive-1)
     return dist
 
-#rand)state是schedule的， 从0-n中采样k个（无重复）
+#rand_state是schedule的， 从[0, n)中采样k个（无重复）
 def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
     if k ==1:
         return SampleInt(rand_state, 0,n)
@@ -104,6 +102,7 @@ def SampleWithoutReplacement(rand_state: np.int64, n:int, k:int)->List[int]:
             order[i], order[j] = order[j], order[i]
     return order[:k]
 
+# NOTE: Get measured candidates from schedule
 def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
     measure_inputs : List[MeasureCandidate]
     measure_inputs = []
