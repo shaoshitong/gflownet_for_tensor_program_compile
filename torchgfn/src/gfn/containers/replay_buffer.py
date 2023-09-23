@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from gfn.containers.trajectories import Trajectories
 from gfn.containers.transitions import Transitions
@@ -26,7 +26,7 @@ class ReplayBuffer:
     def __init__(
         self,
         env: Env,
-        objects_type: Literal["transitions", "trajectories", "states"],
+        objects_type,
         capacity: int = 1000,
     ):
         """Instantiates a replay buffer.
@@ -61,7 +61,7 @@ class ReplayBuffer:
     def __len__(self):
         return self.capacity if self._is_full else self._index
 
-    def add(self, training_objects: Transitions | Trajectories | tuple[States]):
+    def add(self, training_objects):
         """Adds a training object to the buffer."""
         terminating_states = None
         if isinstance(training_objects, tuple):
@@ -81,7 +81,7 @@ class ReplayBuffer:
             self.terminating_states.extend(terminating_states)
             self.terminating_states = self.terminating_states[-self.capacity :]
 
-    def sample(self, n_trajectories: int) -> Transitions | Trajectories | tuple[States]:
+    def sample(self, n_trajectories: int):
         """Samples `n_trajectories` training objects from the buffer."""
         if self.terminating_states is not None:
             return (

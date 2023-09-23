@@ -1,50 +1,16 @@
-<p align="center">
-    <a>
-	    <img src='https://img.shields.io/badge/python-3.10%2B-blueviolet' alt='Python' />
-	</a>
-	<a href='https://torchgfn.readthedocs.io/en/latest/?badge=latest'>
-    	<img src='https://readthedocs.org/projects/torchgfn/badge/?version=latest' alt='Documentation Status' />
-	</a>
-    <a>
-	    <img src='https://img.shields.io/badge/code%20style-black-black' />
-	</a>
-</p>
-
-</p>
-<p align="center">
-  <a href="https://torchgfn.readthedocs.io/en/latest/">Documentation</a> ~ <a href="https://github.com/saleml/torchgfn">Code</a> ~ <a href="https://arxiv.org/abs/2305.14594">Paper</a>
-</p>
-
 # torchgfn: a Python package for GFlowNets
 
 <p align="center"> Please cite <a href="https://arxiv.org/abs/2305.14594">this paper</a> if you are using the library for your research </p>
 
 ## Installing the package
 
-The codebase requires python >= 3.10
-
-To install the latest stable version:
-
-```bash
-pip install torchgfn
-```
-
-Optionally, to run scripts:
-
-```bash
-pip install torchgfn[scripts]
-```
-
 To install the cutting edge version (from the `main` branch):
 
 ```bash
-git clone https://github.com/saleml/torchgfn.git
-conda create -n gfn python=3.10
-conda activate gfn
+git clone https://github.com/shaoshitong/gflownet_for_tensor_program_compile
 cd torchgfn
 pip install .
 ```
-
 
 ## About this repo
 
@@ -55,94 +21,6 @@ Currently, the library is shipped with three environments: two discrete environm
 ### Scripts and notebooks
 
 Example scripts and notebooks for the three environments are provided [here](https://github.com/saleml/torchgfn/tree/master/tutorials/examples). For the hyper grid and the box environments, the provided scripts are supposed to reproduce published results.
-
-
-### Standalone example
-
-This example, which shows how to use the library for a simple discrete environment, requires [`tqdm`](https://github.com/tqdm/tqdm) package to run. Use `pip install tqdm` or install all extra requirements with `pip install .[scripts]` or `pip install torchgfn[scripts]`.
-
-```python
-import torch
-from tqdm import tqdm
-
-from gfn.gflownet import TBGFlowNet  # We use a GFlowNet with the Trajectory Balance (TB) loss
-from gfn.gym import HyperGrid  # We use the hyper grid environment
-from gfn.modules import DiscretePolicyEstimator
-from gfn.samplers import Sampler
-from gfn.utils import NeuralNet  # NeuralNet is a simple multi-layer perceptron (MLP)
-
-if __name__ == "__main__":
-
-    # 1 - We define the environment
-
-    env = HyperGrid(ndim=4, height=8, R0=0.01)  # Grid of size 8x8x8x8
-
-    # 2 - We define the needed modules (neural networks)
-
-    # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
-    module_PF = NeuralNet(
-        input_dim=env.preprocessor.output_dim,
-        output_dim=env.n_actions
-    )  # Neural network for the forward policy, with as many outputs as there are actions
-    module_PB = NeuralNet(
-        input_dim=env.preprocessor.output_dim,
-        output_dim=env.n_actions - 1,
-        torso=module_PF.torso  # We share all the parameters of P_F and P_B, except for the last layer
-    )
-
-    # 3 - We define the estimators
-
-    pf_estimator = DiscretePolicyEstimator(module_PF, env.n_actions, is_backward=False, preprocessor=env.preprocessor)
-    pb_estimator = DiscretePolicyEstimator(module_PB, env.n_actions, is_backward=True, preprocessor=env.preprocessor)
-
-    # 4 - We define the GFlowNet
-
-    gfn = TBGFlowNet(init_logZ=0., pf=pf_estimator, pb=pb_estimator)  # We initialize logZ to 0
-
-    # 5 - We define the sampler and the optimizer
-
-    sampler = Sampler(estimator=pf_estimator)  # We use an on-policy sampler, based on the forward policy
-
-    # Policy parameters have their own LR.
-    non_logz_params = [v for k, v in dict(gfn.named_parameters()).items() if k != "logZ"]
-    optimizer = torch.optim.Adam(non_logz_params, lr=1e-3)
-
-    # Log Z gets dedicated learning rate (typically higher).
-    logz_params = [dict(gfn.named_parameters())["logZ"]]
-    optimizer.add_param_group({"params": logz_params, "lr": 1e-1})
-
-    # 6 - We train the GFlowNet for 1000 iterations, with 16 trajectories per iteration
-
-    for i in (pbar := tqdm(range(1000))):
-        trajectories = sampler.sample_trajectories(env=env, n_trajectories=16)
-        optimizer.zero_grad()
-        loss = gfn.loss(env, trajectories)
-        loss.backward()
-        optimizer.step()
-        if i % 25 == 0:
-            pbar.set_postfix({"loss": loss.item()})
-```
-
-## Contributing
-
-Before the first commit:
-
-```bash
-pip install -e .[dev,scripts]
-pre-commit install
-pre-commit run --all-files
-```
-
-Run `pre-commit` after staging, and before committing. Make sure all the tests pass (By running `pytest`). Note that the `pytest` hook of `pre-commit` only runs the tests in the `testing/` folder. To run all the tests, which take longer, run `pytest` manually.
-The codebase uses `black` formatter.
-
-To make the docs locally:
-
-```bash
-cd docs
-make html
-open build/html/index.html
-```
 
 ## Details about the codebase
 
@@ -290,3 +168,33 @@ These methods are defined in `src/gfn/gflownet/base.py` and are abstract methods
 **Testing**
 
 Remember to create unit tests for your new GFlowNet to ensure it works as intended and integrates seamlessly with other parts of the codebase. This ensures maintainability and reliability of the code!
+
+
+
+# Update by Shitong Shao
+
+## How to install it?
+
+The installation of `torchgfn` is vert simple, you can run:
+
+```bash
+cd [/path/to/torchgfn]
+pip install .
+```
+
+Please note that every modification you make will require a fresh install to call it properly! For instance:
+
+```bash
+# you make some modifications
+cd [/path/to/torchgfn]
+pip uninstall torchgfn && pip install .
+```
+
+## About the implementation the Meta Schedule environment in MLC
+
+- The implementation of Env `MetaScheduleEnv` can be found in `torchgfn/src/gfn/gym/mlc_meta_schedule.py`
+- The implementation of Embedding Strategies `GflowNetEmbedding` can be found in `torchgfn/mlc_dataset/mlc_dataset.py`
+- The implementation of Load GflowNet Dataset and Produce GflowNet Dataset can be found in `torchgfn/mlc_dataset/mlc_dataset.py`, where `gflownet_data_save` is used to make a gflownet dataset, `MLCGflowNetDataset` is the formal GflowNet Dataset (inheritance to `torch.utils.data.Dataset`), and `gflownet_data_load` is used to load a gflownet dataloader (i.e. `torch.utils.data.DataLoader`).
+- The implementation of Scripts can be found in `torchgfn/src/gfn/gym/save_gflownet_dataset.py`, `torchgfn/src/gfn/gym/train_discrete_edm.py`, and `torchgfn/src/gfn/gym/train_meta_schedule.py`. As they are named, where `torchgfn/src/gfn/gym/save_gflownet_dataset.py` is used to produce the GflowNet dataset, which has been produced so far. `torchgfn/src/gfn/gym/train_discrete_edm.py` is used for the validation of the environment for discrete edm. `torchgfn/src/gfn/gym/train_meta_schedule.py` is used for the validation of the environment for meta schedule. Currently, both `torchgfn/src/gfn/gym/train_discrete_edm.py` and `torchgfn/src/gfn/gym/train_meta_schedule.py` still have problems, and it is necessary to ensure that B can generate the discrete MNIST dataset correctly before we can ensure that the training of `torchgfn/src/gfn/gym/train_meta_schedule.py` is correctly.
+- The implementation of Backward Training Paradigm can be found in `torchgfn/src/gfn/gflownet/base.py` line 109:168. Since I implemented this, the current backsampling-based trajectory training may be incorrect, but this has to be implemented in the future.
+

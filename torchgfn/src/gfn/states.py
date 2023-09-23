@@ -1,7 +1,11 @@
 from __future__ import annotations  # This allows to use the class name in type hints
 
 from abc import ABC, abstractmethod
-from math import prod
+from functools import reduce
+import operator
+
+def prod(iterable):
+    return reduce(operator.mul, iterable, 1)
 from typing import ClassVar, Optional, Sequence, cast
 
 import torch
@@ -129,12 +133,12 @@ class States(ABC):
     def device(self) -> torch.device:
         return self.tensor.device
 
-    def __getitem__(self, index: int | Sequence[int] | Sequence[bool]) -> States:
+    def __getitem__(self, index) -> States:
         """Access particular states of the batch."""
         return self.__class__(self.tensor[index])
 
     def __setitem__(
-        self, index: int | Sequence[int] | Sequence[bool], states: States
+        self, index, states: States
     ) -> None:
         """Set particular states of the batch."""
         self.tensor[index] = states.tensor
@@ -311,7 +315,7 @@ class DiscreteStates(States, ABC):
         assert self.forward_masks is not None and self.backward_masks is not None
 
     def __getitem__(
-        self, index: int | Sequence[int] | Sequence[bool]
+        self, index
     ) -> DiscreteStates:
         states = self.tensor[index]
         self._check_both_forward_backward_masks_exist()
@@ -320,7 +324,7 @@ class DiscreteStates(States, ABC):
         return self.__class__(states, forward_masks, backward_masks)
 
     def __setitem__(
-        self, index: int | Sequence[int] | Sequence[bool], states: DiscreteStates
+        self, index, states: DiscreteStates
     ) -> None:
         super().__setitem__(index, states)
         self._check_both_forward_backward_masks_exist()

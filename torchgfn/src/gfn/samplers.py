@@ -92,6 +92,7 @@ class Sampler:
             ), "States should be a linear batch of states"
             n_trajectories = states.batch_shape[0]
 
+        
         device = states.tensor.device
 
         dones = (

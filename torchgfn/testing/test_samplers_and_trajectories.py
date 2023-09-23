@@ -1,5 +1,3 @@
-from typing import Literal
-
 import pytest
 
 from gfn.containers import Trajectories
@@ -180,7 +178,7 @@ def test_sub_sampling(env_name: str):
 @pytest.mark.parametrize("objects", ["trajectories", "transitions"])
 def test_replay_buffer(
     env_name: str,
-    objects: Literal["trajectories", "transitions"],
+    objects,
 ):
     if env_name == "HyperGrid":
         env = HyperGrid(ndim=2, height=4)

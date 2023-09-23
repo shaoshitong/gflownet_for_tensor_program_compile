@@ -1,7 +1,11 @@
 from __future__ import annotations  # This allows to use the class name in type hints
 
 from abc import ABC
-from math import prod
+from functools import reduce
+import operator
+
+def prod(iterable):
+    return reduce(operator.mul, iterable, 1)
 from typing import ClassVar, Sequence
 
 import torch
@@ -66,12 +70,12 @@ class Actions(ABC):
     def device(self) -> torch.device:
         return self.tensor.device
 
-    def __getitem__(self, index: int | Sequence[int] | Sequence[bool]) -> Actions:
+    def __getitem__(self, index) -> Actions:
         actions = self.tensor[index]
         return self.__class__(actions)
 
     def __setitem__(
-        self, index: int | Sequence[int] | Sequence[bool], actions: Actions
+        self, index, actions: Actions
     ) -> None:
         """Set particular actions of the batch."""
         self.tensor[index] = actions.tensor

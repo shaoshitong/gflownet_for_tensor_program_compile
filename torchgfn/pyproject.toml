@@ -21,7 +21,7 @@ classifiers = [
 # core dependencies.
 einops = ">=0.6.1"
 numpy = ">=1.21.2"
-python = "^3.10"
+python = "^3.7"
 torch = ">=1.9.0"
 torchtyping = ">=0.1.4"
 
@@ -115,7 +115,7 @@ strict = [
 ]
 
 typeCheckingMode = "basic"
-pythonVersion = "3.10"
+pythonVersion = "3.7"
 typeshedPath = "typeshed"
 enableTypeIgnoreComments = true
 

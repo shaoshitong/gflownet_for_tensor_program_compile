@@ -1,6 +1,6 @@
 """This file contains some examples of modules that can be used with GFN."""
 
-from typing import Literal, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,7 @@ class NeuralNet(nn.Module):
         output_dim: int,
         hidden_dim: Optional[int] = 256,
         n_hidden_layers: Optional[int] = 2,
-        activation_fn: Optional[Literal["relu", "tanh", "elu"]] = "relu",
+        activation_fn = "relu",
         torso: Optional[nn.Module] = None,
     ):
         """Instantiates a MLP instance.

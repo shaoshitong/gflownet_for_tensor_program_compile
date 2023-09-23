@@ -1,7 +1,7 @@
 """
 Copied and Adapted from https://github.com/Tikquuss/GflowNets_Tutorial
 """
-from typing import ClassVar, Literal, Tuple, cast
+from typing import ClassVar, Tuple, cast
 
 import torch
 from einops import rearrange
@@ -23,8 +23,8 @@ class HyperGrid(DiscreteEnv):
         R1: float = 0.5,
         R2: float = 2.0,
         reward_cos: bool = False,
-        device_str: Literal["cpu", "cuda"] = "cpu",
-        preprocessor_name: Literal["KHot", "OneHot", "Identity", "Enum"] = "KHot",
+        device_str = "cpu",
+        preprocessor_name = "KHot",
     ):
         """HyperGrid environment from the GFlowNets paper.
         The states are represented as 1-d tensors of length `ndim` with values in
@@ -82,12 +82,12 @@ class HyperGrid(DiscreteEnv):
             preprocessor=preprocessor,
         )
 
-    def make_States_class(self) -> type[DiscreteStates]:
+    def make_States_class(self):
         "Creates a States class for this environment"
         env = self
 
         class HyperGridStates(DiscreteStates):
-            state_shape: ClassVar[tuple[int, ...]] = (env.ndim,)
+            state_shape = (env.ndim,)
             s0 = env.s0
             sf = env.sf
             n_actions = env.n_actions

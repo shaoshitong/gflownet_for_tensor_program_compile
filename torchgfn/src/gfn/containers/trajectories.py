@@ -41,12 +41,12 @@ class Trajectories(Container):
     def __init__(
         self,
         env: Env,
-        states: States | None = None,
-        actions: Actions | None = None,
-        when_is_done: TT["n_trajectories", torch.long] | None = None,
+        states = None,
+        actions = None,
+        when_is_done = None,
         is_backward: bool = False,
-        log_rewards: TT["n_trajectories", torch.float] | None = None,
-        log_probs: TT["max_length", "n_trajectories", torch.float] | None = None,
+        log_rewards = None,
+        log_probs = None,
     ) -> None:
         """
         Args:
@@ -125,18 +125,18 @@ class Trajectories(Container):
         return self.states[self.when_is_done - 1, torch.arange(self.n_trajectories)]
 
     @property
-    def log_rewards(self) -> TT["n_trajectories", torch.float] | None:
+    def log_rewards(self):
         if self._log_rewards is not None:
             assert self._log_rewards.shape == (self.n_trajectories,)
             return self._log_rewards
         if self.is_backward:
-            return None
+            return self.env.log_reward(self.states[0,torch.arange(self.n_trajectories)])
         try:
             return self.env.log_reward(self.last_states)
         except NotImplementedError:
             return torch.log(self.env.reward(self.last_states))
 
-    def __getitem__(self, index: int | Sequence[int]) -> Trajectories:
+    def __getitem__(self, index) -> Trajectories:
         """Returns a subset of the `n_trajectories` trajectories."""
         if isinstance(index, int):
             index = [index]
