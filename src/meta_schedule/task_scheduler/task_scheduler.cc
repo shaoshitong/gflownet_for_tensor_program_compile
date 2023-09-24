@@ -140,36 +140,25 @@ void TaskCleanUp(TaskRecordNode* self, int task_id, const Array<RunnerResult>& r
   self->runner_futures = NullOpt;
 }
 
+PackedFunc TaskSchedulerNode::GetLogger() const { return this->logger; };
 
-PackedFunc TaskSchedulerNode::GetLogger() const{
-      return this->logger;
+Array<TaskRecord> TaskSchedulerNode::GetTaskRecord() const { return this->tasks_; };
+
+Array<MeasureCallback> TaskSchedulerNode::GetMeasureCallbacks() const {
+  return this->measure_callbacks_;
 };
 
-Array<TaskRecord> TaskSchedulerNode::GetTaskRecord() const{
-      return this->tasks_;
-};
+Optional<Database> TaskSchedulerNode::GetDatabase() const { return this->database_; };
 
-Array<MeasureCallback> TaskSchedulerNode::GetMeasureCallbacks() const{
-    return this->measure_callbacks_;
-};
+Optional<CostModel> TaskSchedulerNode::GetCostModel() const { return this->cost_model_; };
 
-Optional<Database> TaskSchedulerNode::GetDatabase() const{
-    return this->database_;
-};
+int TaskSchedulerNode::GetRemainingTasks() const { return this->remaining_tasks_; };
 
-Optional<CostModel> TaskSchedulerNode::GetCostModel() const{
-    return this->cost_model_;
-};
-
-int TaskSchedulerNode::GetRemainingTasks() const{
-    return this->remaining_tasks_;
-};
-
-Array<Array<tir::Schedule>> TaskSchedulerNode::Tune_DesignSpace(Array<TuneContext> ctxs, Array<FloatImm> task_weights,
-                             int max_trials_global, int max_trials_per_task,
-                             int num_trials_per_iter, Builder builder, Runner runner,
-                             Array<MeasureCallback> measure_callbacks, Optional<Database> database,
-                             Optional<CostModel> cost_model) {
+Array<Array<tir::Schedule>> TaskSchedulerNode::Tune_DesignSpace(
+    Array<TuneContext> ctxs, Array<FloatImm> task_weights, int max_trials_global,
+    int max_trials_per_task, int num_trials_per_iter, Builder builder, Runner runner,
+    Array<MeasureCallback> measure_callbacks, Optional<Database> database,
+    Optional<CostModel> cost_model) {
   CHECK_EQ(ctxs.size(), task_weights.size()) << "ValueError: `task_weights` must have the same "
                                                 "length as `ctxs`";
   int n_tasks = this->remaining_tasks_ = ctxs.size();
@@ -205,7 +194,6 @@ Array<Array<tir::Schedule>> TaskSchedulerNode::Tune_DesignSpace(Array<TuneContex
   return design_spaces_list;
 }
 
-
 void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weights,
                              int max_trials_global, int max_trials_per_task,
                              int num_trials_per_iter, Builder builder, Runner runner,
@@ -219,6 +207,7 @@ void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weigh
   this->cost_model_ = cost_model;
   this->tasks_.clear();
   this->tasks_.reserve(n_tasks);
+  TVM_PY_LOG(INFO, this->logger) << "$$$$$$ This is a test for C++ build $$$$$";
   for (int i = 0; i < n_tasks; ++i) {
     const TuneContext& ctx = ctxs[i];
     double weight = task_weights[i]->value;
@@ -237,8 +226,9 @@ void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weigh
                                     << sch->mod() << "\n"
                                     << Concat(trace->AsPython(false), "\n");
     }
-    ctx->search_strategy.value()->PreTuning(max_trials_per_task, num_trials_per_iter, design_spaces,
-                                            database, cost_model); // add cost model to search_strategy.state.cost_model
+    ctx->search_strategy.value()->PreTuning(
+        max_trials_per_task, num_trials_per_iter, design_spaces, database,
+        cost_model);  // add cost model to search_strategy.state.cost_model
   }
 
   int num_trials_already = 0;
@@ -254,13 +244,13 @@ void TaskSchedulerNode::Tune(Array<TuneContext> ctxs, Array<FloatImm> task_weigh
     }
 
     if (Optional<Array<MeasureCandidate>> candidates = task->measure_candidates =
-            task->ctx->search_strategy.value()->GenerateMeasureCandidates()) { // evolve
+            task->ctx->search_strategy.value()->GenerateMeasureCandidates()) {  // evolve
       int num_candidates = candidates.value().size();
       num_trials_already += num_candidates;
       TVM_PY_LOG(INFO, this->logger) << "Sending " << num_candidates << " sample(s) to builder";
-      SendToBuilder(task, builder); // RunnerResult = ( <path>,None )
+      SendToBuilder(task, builder);  // RunnerResult = ( <path>,None )
       TVM_PY_LOG(INFO, this->logger) << "Sending " << num_candidates << " sample(s) to runner";
-      SendToRunner(task, runner); // 
+      SendToRunner(task, runner);  //
     } else {
       TerminateTask(task_id);
     }
@@ -427,7 +417,6 @@ void PyTaskSchedulerNode::Tune(Array<TuneContext> tasks, Array<FloatImm> task_we
            builder, runner, measure_callbacks, database, cost_model);
   }
 }
-
 
 TVM_REGISTER_NODE_TYPE(TaskRecordNode);
 TVM_REGISTER_OBJECT_TYPE(TaskSchedulerNode);

@@ -32,12 +32,12 @@ import time
 import pickle
 from tqdm import tqdm
 import argparse
-import multiprocessing
+# import multiprocessing
 import json
 
 from torch.nn.utils.rnn import pad_sequence
-from ..utils import derived_object, shash2hex
-from ..logging import get_logger
+# from ..utils import derived_object, shash2hex
+# from ..logging import get_logger
 
 class FeatureGroup:
     """Feature group
@@ -409,7 +409,8 @@ def load_data(logger, datasets_all):
 def train(train_loader, val_dataloader, device, logger):
 
     net = TransformerModule().to(device)
-    net = torch.nn.DataParallel(net,device_ids=[7,0,1,2,3,4,5,6])
+    # NOTE: specify device id order
+    net = torch.nn.DataParallel(net,device_ids=[0,1,2,3,4,5,6, 7])
     
     loss_func = LambdaRankLoss(device)
     
@@ -465,10 +466,11 @@ set_seed(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # NOTE: We can conver to cuda:0, but retrain pkl model which cuda is cuda:7
-    parser.add_argument("--cuda", type=str, default='cuda:7')
+    # NOTE: We can convert to cuda:0, but retrain pkl model which cuda is cuda:7
+    # model & data are not on same device
+    parser.add_argument("--cuda", type=str, default='cuda:0')
     # NOTE: Use you defined dataset path
-    parser.add_argument("--dataset_path", type=str, default='/root/data/share/dataset/extract_features')
+    parser.add_argument("--dataset_path", type=str, default='/root/share/dataset/extract_features_v2')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
@@ -480,7 +482,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_size_per_gpu", type=int, default=512)
     parser.add_argument("--n_epoch", type=int, default=15)
     parser.add_argument("--target", type=str, default="nvidia/nvidia-a100")
-    parser.add_argument("--save_model_path", type=str, default="./save_model")
+    parser.add_argument("--save_model_path", type=str, default="/root/kongdehao/model")
     
     args = parser.parse_args()
     

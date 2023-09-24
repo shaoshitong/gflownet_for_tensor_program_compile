@@ -70,7 +70,7 @@ def extract_features(
 @derived_object
 class tlpCostModel(PyCostModel):
     # NOTE: cuda:7 is corresponding to 
-    def __init__(self, *, device='cuda:7') -> None:
+    def __init__(self, *, device='cuda:0') -> None:
         super().__init__()
         # print("----------------------------Enter __init__ func")
         self.device = device
