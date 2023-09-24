@@ -113,7 +113,7 @@ def AssembleCandidates(picks:List[Schedule])->List[MeasureCandidate]:
 def list_swap(list1, list2):
     list1[:], list2[:] = list2[:], list1[:]
 
-
+# NOTE: class for data structure per thread
 class PerThreadData:
     # auxiliary class for MyEvolutionarySearch
     mod :IRModule = None
@@ -131,50 +131,61 @@ class PerThreadData:
     # \param genetic_mutate_prob The probability of mutation.
     # \param mutator_probs The probability of each mutator as a dict.
     def Set(self, scores: List[float], genetic_mutate_prob:float, mutator_probs):
+        # partial(): New function with partial application of the given arguments and keywords.
         self.trace_sampler = partial(PerThreadData.default_trace_sampler,rand_state=self.rand_state,weights=scores)
         self.mutator_sampler = partial(PerThreadData.default_mutator_sampler,genetic_mutate_prob=genetic_mutate_prob,mutator_probs=mutator_probs,rand_state=self.rand_state)
 
     
+    # NOTE: ret idx for mutate
     @staticmethod
     def default_trace_sampler(rand_state, weights, sum_type = "softmax"):
         np.random.seed(rand_state)
         if not isinstance(weights,np.ndarray):
             weights = np.array(weights)
-
         if sum_type == "linear":
+            # convert into positive weights
             if weights.min() < 0:
                 weights = weights - weights.min()
                 weights = weights/np.sum(weights)
         elif sum_type == "softmax":
+            # convert into softmax format
             weights = np.exp(weights - weights.min())/np.exp(weights - weights.min()).sum()
         else:
             raise NotImplementedError
+        # Based on weights, get idx for mutation
         idx = np.random.choice(weights.shape[0],1,p=weights).item()
         return idx
     
     @staticmethod
     def default_mutator_sampler(genetic_mutate_prob, mutator_probs,rand_state):
         np.random.seed(rand_state)
+        # all mutator results 
         mutators = []
         mutators.append(None)
+        # weights for mutation, first is None that not mutation 
         masses = []
         masses.append(1 - genetic_mutate_prob)
         total_mass_mutator = 0
         if genetic_mutate_prob>0:
             for mutator,mass in mutator_probs.items():
                 total_mass_mutator += float(mass.value)
+                # append mutator result
                 mutators.append(mutator)
-                masses.append(float(mass.value)*genetic_mutate_prob)
+                # cur mutator prob is mass.v * gene_prob -- sum over masses is 1
+                masses.append(float(mass.value) * genetic_mutate_prob)
+        # check if mutator_probs have mutators result 
         if (total_mass_mutator == 0.0):
             masses[0] = 1.0
             for i in range(1,len(masses)):
                 masses[i] = 0.0
+        # check if sum over mutator_probs is 1, if not normalizing to 1
         elif (total_mass_mutator != 1.0):
             for i in range(1,len(masses)):
                 masses[i]/=total_mass_mutator
+        # Based on trace_sampler() get final mutator, masses is weights == probs
         return mutators[PerThreadData.default_trace_sampler(rand_state,masses)]
 
-        
+# Apply the trace and postprocessors to an IRModule   
 class ThreadedTraceApply:
      
     class Item:
@@ -227,6 +238,7 @@ def PredictNormalizedScore(candidates,context,cost_model):
     scores = np.clip(scores,0.0,np.inf)
     return scores
 
+# datas is PerThreadData, measures_trace from databases, pp is ThreadedTraceApply
 def f_proc_measured(trace_id, datas, measured_traces, pp, results,num_threads):
     thread_id = trace_id % num_threads
     data = datas[thread_id]
@@ -235,6 +247,7 @@ def f_proc_measured(trace_id, datas, measured_traces, pp, results,num_threads):
     trace = measured_traces[trace_id]
     result = results[trace_id]
     assert result is None, f"result {trace_id} should be None"
+    # parallel apply trace into mod
     sch = pp.Apply(mod, trace, rand_state)
     if sch is not None:
         results[trace_id] = sch
@@ -313,27 +326,38 @@ class State:
             self.per_thread_data_[i].rand_state = forkseed(self.searchstrategy.rand_state)
         self.token_ = self.database_.commit_workload(self.mod)
 
+
     def pickbestfromdatabase(self,num) -> List[Schedule]:
         num = int(num)
         _ = Profiler.timeit("EvoSearch/PickBestFromDatabase")
         measured_traces = []
+        # key is database.get_top_k()
         top_records = self.database_.get_top_k(self.token_, num)
         for record in top_records:
             measured_traces.append(record.trace)
         actual_num = len(measured_traces)
+        # only define a trace and postproc apply
         pp = ThreadedTraceApply(self.searchstrategy.postprocs)
         results = [None]*actual_num
         for i in range(actual_num):
+            # thread apply trace and postproc in parallel
             f_proc_measured(i, self.per_thread_data_, measured_traces, pp, results,self.context.num_threads)
         return results
     
+    # * \brief Sample the initial population from previous measured results and randomly generated
+    # *  traces via trace replaying.
+    # * \param num The number of traces to produce.
+    # * \return The initial population of traces sampled.
+
     def SampleInitPopulation(self, num : int)-> List[Schedule]:
+        # Tuning time profiler.
         _ = Profiler.timeit("EvoSearch/SampleInitPopulation")
         pp = ThreadedTraceApply(self.searchstrategy.postprocs)
         out_schs = []
         fail_count = 0
         while(len(out_schs) < self.searchstrategy.init_min_unmeasured and fail_count < self.searchstrategy.max_fail_count):
             results = [None]*num
+            # unmeasured trace has only instructions, no decisions
             def f_proc_unmeasured(thread_id:int, trace_id:int):
                 thread_id = thread_id%self.context.num_threads            
                 data = self.per_thread_data_[thread_id]     
@@ -360,6 +384,7 @@ class State:
     def ModuleHash(self, mod: IRModule)->int:
         return self.model_equality.hash(mod)
     
+    # pick candidates with eps ratio of unmeasured candidates and rest of bests candidates
     def PickWithEpsGreedy(self, unmeasured:List[Schedule], bests:List[Schedule], num:int)->List[Schedule]:
         """
         Pick final candidates from the given initial population and bests of evolved ones.
@@ -373,6 +398,7 @@ class State:
         The final picked candidates with a ratio of both.
         """
         _ = Profiler.timeit("EvoSearch/PickWithEpsGreedy")
+        # eps ratio is random 
         num_rands = num * self.searchstrategy.eps_greedy 
         num_bests = num - num_rands
         rands =  SampleWithoutReplacement(self.context.rand_state, len(unmeasured), len(unmeasured))
@@ -380,7 +406,9 @@ class State:
         measured_workloads = self.measured_workloads_
         i_bests, i_rands =0,0
         for i in range(num):
+            # if has rest best candidates
             has_best = i_bests < len(bests)
+            # if has rest rand candidates
             has_rand = i_rands < len(rands)
             #pick schedule
             sch : Schedule = None
@@ -409,8 +437,10 @@ class State:
                 results.append(sch)
         
         return results
+    
     # NOTE: important!!! -- adapt to GFlowNet
     def GenerateMeasureCandidates(self)->Optional[List[MeasureCandidate]]:
+        # check if tray max trials, not over max trials
         if(self.st >= self.max_trials):
             return None
         sample_num = self.num_trials_per_iter
@@ -420,11 +450,11 @@ class State:
         assert self.st < self.ed, f"check fail: {self.st} < {self.ed}"
         pop = self.searchstrategy.population_size
         self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
-        # 1. pick best measure -- init is {None}
+        # 1. pick best measure from database -- init is {None}
         measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio)
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
-        # 2. init popu
+        # 2. init popu -- sample unmeasured population from design space, merge into init population
         unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
         count_set = set()
         for unmea in unmeasured:
@@ -441,7 +471,7 @@ class State:
         bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num) 
         
         self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
-        # 4. avoid overfitting
+        # 4. avoid overfitting -- use PickWithEpsGreedy(), with eps ratio of rand unmeasured
         picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
         self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
         if picks is None:
@@ -456,6 +486,7 @@ class State:
         self.ed += len(results)
         
     def EvolveWithCostModel(self,population,num):
+        # exists record already measured schedules
         exists = IRModuleSet(self.model_equality)
         with Profiler.timeit("EvoSearch/Evolve/Misc/CopyMeasuredWorkloads"):
             assert num > 0, "num should be positive"
@@ -463,12 +494,13 @@ class State:
         iter = 0
         heap = SizedHeap(num)
         while True: 
+            # get predict normalized score
             scores = PredictNormalizedScore(population,self.context,self.cost_model_)
             
             with Profiler.timeit("EvoSearch/Evolve/Misc"):
                 assert len(scores) == len(population), "scores and population should have same length"
-                # The heap to record best schedule, we do not consider schedules that are already measured
-                
+
+                # The heap to record best schedule, we do not consider schedules that are already measured               
                 for i in range(len(population)):
                     sch = population[i]
                     mod = sch.mod
@@ -477,36 +509,44 @@ class State:
                     if exists.Has(mod,shash) == False:
                         exists.Add(mod,shash)
                         heap.push(score,sch)
-
                         
                 if iter == self.searchstrategy.genetic_num_iters:
                     break
+                # set per thread data
                 for data in self.per_thread_data_:
-                    data.Set(scores,self.searchstrategy.genetic_mutate_prob,self.searchstrategy.mutator_probs)
+                    data.Set(scores, self.searchstrategy.genetic_mutate_prob, self.searchstrategy.mutator_probs)
             
             # NOTE: generate part: GFlowNet work here!
             with Profiler.timeit("EvoSearch/Evolve/Mutation"):
                 pp = ThreadedTraceApply(self.searchstrategy.postprocs)
                 cbmask = ConcurrentBitmask(self.searchstrategy.population_size)
                 next_population = [None]*self.searchstrategy.population_size
-
+                
+                # find new candidate as new population
                 def f_find_candidate(thread_id,trace_id):
+                    # cur thread id
                     thread_id = trace_id%self.context.num_threads
+                    # get data, rand_state, mod, trace_sampler, mutator_sampler
                     data = self.per_thread_data_[thread_id]
                     rand_state = data.rand_state
                     mod = data.mod
                     trace_sampler = data.trace_sampler
                     mutator_sampler = data.mutator_sampler
+                    # cur result for thread id
                     result = next_population[trace_id]
                     sampled_trace_id = -1
                     for fail_count in range(self.searchstrategy.genetic_max_fail_count):
+                        # get sampled trace from trace_sampler()
                         sampled_trace_id = trace_sampler()
                         trace = population[sampled_trace_id].trace
+                        # get mutator
                         opt_mutator = mutator_sampler()
                         if opt_mutator:
+                            # apply mutator into trace
                             mutator = opt_mutator
                             new_trace = mutator.apply(trace)
                             if new_trace is not None:
+                                # apply new trace into mod, get sch & result
                                 sch = pp.Apply(mod,new_trace,rand_state)
                                 if sch is not None:
                                     result = sch
@@ -517,7 +557,7 @@ class State:
                     if result is None:
                         result = population[sampled_trace_id]
                     next_population[trace_id] = result
-
+                # swap population with next population
                 for i in range(self.searchstrategy.population_size):
                     f_find_candidate(i,i)
                 list_swap(population,next_population)
@@ -544,6 +584,7 @@ class State:
             output_str += "\n"
         output_str = f"Scores of the best {len(heap)} schedules:" + output_str
         self.logger(self.logger_key[1],__name__,current_line_number(),output_str)
+        
         return results
   
 
