@@ -120,6 +120,7 @@ class Trajectories(Container):
 
         return self.actions.batch_shape[0]
 
+    # ret reward of leaf state
     @property
     def last_states(self) -> States:
         return self.states[self.when_is_done - 1, torch.arange(self.n_trajectories)]
@@ -130,6 +131,7 @@ class Trajectories(Container):
             assert self._log_rewards.shape == (self.n_trajectories,)
             return self._log_rewards
         if self.is_backward:
+            # return self.env.log_reward(self.states[0,torch.arange(self.n_trajectories)])
             return self.env.log_reward(self.states[0,torch.arange(self.n_trajectories)])
         try:
             return self.env.log_reward(self.last_states)

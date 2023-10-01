@@ -58,8 +58,11 @@ if __name__ == "__main__":
             # NOTE: following is training & model
             max_value = max(max_value, len(embedding_results))
             # False: decode(), new_insts & sub_decisions are list
-            new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
+            # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
+            #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
+            new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=embedding_results,
                                                   embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
+            
             # Must use with_decision() to set sub_trace
             for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
                 sub_trace.with_decision(new_sub_inst, new_sub_decision, True)

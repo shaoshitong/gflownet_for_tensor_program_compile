@@ -10,6 +10,17 @@ from gfn.env import DiscreteEnv
 from gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
 from gfn.states import DiscreteStates, States
 
+import numpy as np
+from tvm.runtime import NDArray
+from tvm.meta_schedule.feature_extractor import FeatureExtractor, PerStoreFeature
+from tvm.meta_schedule.runner import RunnerResult
+from tvm.meta_schedule.search_strategy import MeasureCandidate
+from tvm.meta_schedule.tune_context import TuneContext
+from typing import Dict, List, NamedTuple, Optional, Tuple
+from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
+
+
+
 # NOTE: need for double check for this file -- To implement MetaSchedule Env
 class EnergyFunction(nn.Module, ABC):
     """Base class for energy functions"""
@@ -50,7 +61,7 @@ class MetaScheduleEnv(DiscreteEnv):
         
         # action's [0,one_hot_ndim*one_hot_seq_len-1]==[0, 15*10-1] represents the choice \
         # of cuda_bind and annotation, while action's [one_hot_ndim*one_hot \
-        # _seq_len,one_hot_ndim*one_hot_seq_ len+2*binary_ndim*binary_seq_l \
+        # _seq_len,one_hot_ndim*one_hot_seq_len+2*binary_ndim*binary_seq_l \
         # en+1]==[15*10, 15*10+2*15*96-1] represents the choice of sample_perfectile, while action's  \
         # [one_hot_ndim*one_hot_seq_len+2*binary_ndim*binary_seq_len+1] rep \
         # resents the choice of termination condition.
@@ -64,19 +75,21 @@ class MetaScheduleEnv(DiscreteEnv):
         self.one_hot_ndim = one_hot_ndim
         self.binary_seq_len = binary_seq_len
         self.one_hot_seq_len = one_hot_seq_len
+        # ndim = 15+15*96
         self.ndim = self.one_hot_seq_len+self.binary_seq_len*self.binary_ndim
+        # n_action = 15*10 + 2*15*96
+        n_actions = self.one_hot_ndim*self.one_hot_seq_len+2*self.binary_ndim*self.binary_seq_len + 1
         
         s0 = torch.full((self.ndim,), fill_value=-1, dtype=torch.long, device=torch.device(device_str))
         sf = torch.full((self.ndim,), fill_value=-2, dtype=torch.long, device=torch.device(device_str))
-        
+
         if energy is None:
             energy = IsingModel(
                 torch.ones((self.ndim, self.ndim), device=torch.device(device_str))
             )
         self.energy: EnergyFunction = energy
         self.alpha = alpha
-        
-        n_actions = self.one_hot_ndim*self.one_hot_seq_len+2*self.binary_ndim*self.binary_seq_len + 1
+
         
         if preprocessor_name == "Identity":
             preprocessor = IdentityPreprocessor(output_dim=self.ndim)
@@ -105,21 +118,22 @@ class MetaScheduleEnv(DiscreteEnv):
             n_actions = env.n_actions
             device = env.device
 
-            # NOTE: get random terminal state
+            # NOTE: get random state -- val in [-1, 0, .., ndim-1]
             @classmethod
             def make_random_states_tensor(
                 cls, batch_shape: Tuple[int, ...]
             ) -> TT["batch_shape", "state_shape", torch.float]:
                 one_hot_seq = torch.randint(-1,
-                                env.one_hot_ndim-1,
-                                batch_shape+(env.one_hot_seq_len,),
+                                env.one_hot_ndim, # NOTE: high is ndim, not ndim-1
+                                batch_shape+(env.one_hot_seq_len, ),
                                 dtype=torch.long,
                                 device=env.device)
                 binary_seq  = torch.randint(-1,
                                 2,
-                                batch_shape+(self.binary_seq_len*self.binary_ndim,),
+                                batch_shape+(env.binary_seq_len*env.binary_ndim, ),
                                 dtype=torch.long,
                                 device=env.device)
+                # As 0th dim is batch_shape, cat in 1th dim
                 total_seq = torch.cat([one_hot_seq,binary_seq],1)
                 
                 return total_seq
@@ -156,30 +170,72 @@ class MetaScheduleEnv(DiscreteEnv):
                     self.backward_masks,
                 )
 
-                # The setting of mask is relatively complicated here to realize the \
-                # blocking of inappropriate actions during sampling. The algorithm  \
-                # is modified from the discrete_edm environment, so most of the pra \
-                # ctices are identical to it.
+                ''' 
+                    The setting of mask is relatively complicated here to realize the \
+                    blocking of inappropriate actions during sampling. The algorithm  \
+                    is modified from the discrete_edm environment, so most of the pra \
+                    ctices are identical to it.
+                '''
                 
+                '''
                 # 1) Both forward and backward masks need to be separated according \
                 # to the different parts of the action. This refers to the three di \
                 # fferent cases of annotation,sample_perfectile,cuda_bind. In a for \
                 # ward mask, state[:one_hot_seq_len] is selectable as long as it is \
-                # not -1. Similarly, state[:one_hot_seq_len:] is selectable as long \
+                # not -1. Similarly, state[one_hot_seq_len:] is selectable as long \
                 # as it is not -1.
+                '''
 
-                # NOTE: forward mask is valid position flag (-1) considering according to prim type (in condition)
-                self.forward_masks[..., :env.one_hot_ndim*env.one_hot_seq_len] = \
-                    (self.tensor[..., :env.one_hot_seq_len] == -1)[...,None].expand(*self.tensor.shape[:-1],
-                    env.one_hot_seq_len,env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1],env.one_hot_seq_len*env.one_hot_ndim)
+                ''' [..., ] Usage
+                >>> t
+                tensor([[1., 2., 3.],
+                        [0., 2., 4.]])
+                >>> t[..., 1]
+                tensor([2., 2.])
+                '''
+                ''' *() Usage
+                >>> t0 = [*(1, 0, 2), 0, 0, 1]
+                >>> t0
+                [1, 0, 2, 0, 0, 1]
+                '''
+                ''' tensor.expand() usage
+                >>> x = torch.tensor([[1], [2], [3]])
+                >>> x.size()
+                torch.Size([3, 1])
+                >>> x.expand(3, 4)
+                tensor([[ 1,  1,  1,  1],
+                        [ 2,  2,  2,  2],
+                        [ 3,  3,  3,  3]])
+                >>> x.expand(-1, 4)   # -1 means not changing the size of that dimension
+                tensor([[ 1,  1,  1,  1],
+                        [ 2,  2,  2,  2],
+                        [ 3,  3,  3,  3]])
+                >>> x = x[..., None]
+                >>> x.size()
+                torch.Size([3, 1, 1])
+                >>> x.expand(3, 4, 2).contiguous().view(-1, 4*2)
+                tensor([[1, 1, 1, 1, 1, 1, 1, 1],
+                        [2, 2, 2, 2, 2, 2, 2, 2],
+                        [3, 3, 3, 3, 3, 3, 3, 3]])
+                '''
+                act_low0 = env.one_hot_ndim*env.one_hot_seq_len
+                act_high0 = act_low0 + 2*env.binary_ndim*env.binary_seq_len
+                sta_low0 = env.one_hot_seq_len
+                # NOTE: forward mask is valid position flag (-1) for action considering according to prim type (in condition)
+                # [..., None]: add new dim, [1, 2, 3] --> [[1], [2], [3]]
+                # expand(): convert one flag state into ndim action -- (15, ) --> (15, 10)
+                # view(): convert into one dim
+                self.forward_masks[..., :act_low0] = \
+                    (self.tensor[..., :sta_low0] == -1)[...,None].expand(*self.tensor.shape[:-1],
+                    env.one_hot_seq_len,env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1], act_low0)
                 
-                self.forward_masks[..., env.one_hot_ndim*env.one_hot_seq_len: env.one_hot_ndim*env.one_hot_seq_len+2*env.binary_ndim*env.binary_seq_len] = \
-                    (self.tensor[..., env.one_hot_seq_len:] == -1)[...,None].expand(*self.tensor.shape[:-1],
-                    env.binary_ndim*env.binary_seq_len,2).contiguous().view(*self.tensor.shape[:-1],env.binary_ndim*env.binary_seq_len*2)
+                self.forward_masks[..., act_low0:act_high0] = \
+                    (self.tensor[..., sta_low0: ] == -1)[...,None].expand(*self.tensor.shape[:-1],
+                    env.binary_ndim*env.binary_seq_len,2).contiguous().view(*self.tensor.shape[:-1],act_high0-act_low0)
                 
                 # 2) The last action is not a terminal state as long as one of the e \
                 # xistent states is -1.
-                
+                # torch.all(input): test if all eles in input evaluate to True
                 self.forward_masks[..., -1] = torch.all(self.tensor != -1, dim=-1)
                 
                 # 3) The case of backward's mask is more complex, and we need to emp \
@@ -193,19 +249,50 @@ class MetaScheduleEnv(DiscreteEnv):
                 # NOTE: backward mask is valid position flag (not -1)
 
                 src = torch.full_like(self.tensor[..., :env.one_hot_seq_len], fill_value=1, dtype=torch.bool, device=self.tensor.device)
-                tar = torch.zeros_like(self.backward_masks[..., :env.one_hot_ndim*env.one_hot_seq_len], device=self.tensor.device).bool()
+                tar = torch.zeros_like(self.backward_masks[..., :act_low0], device=self.tensor.device).bool()
                 # convert [0, 5, 2, 7] into 0 + (5 + 10) + (2 + 10 + 10) ...
                 # 0 is first 10 pos, 5 is second 10 pos, 2 is third 10 pos 
+                # (bs, len) + (1, len) == 将arange中一行元素依次累加到bs行，实现了上面的0+(5+10)+(2+10+10)
                 index = self.tensor[..., :env.one_hot_seq_len] + (torch.arange(env.one_hot_seq_len, device=self.tensor.device) * env.one_hot_ndim)[None, ...]
                 mask = self.tensor[..., :env.one_hot_seq_len] >= 0
 
+                '''
+                >>> torch.nonzero(torch.tensor([1, 1, 1, 0, 1]))
+                tensor([[ 0],
+                        [ 1],
+                        [ 2],
+                        [ 4]])
+                >>> torch.nonzero(torch.tensor([[0.6, 0.0, 0.0, 0.0],
+                ...                             [0.0, 0.4, 0.0, 0.0],
+                ...                             [0.0, 0.0, 1.2, 0.0],
+                ...                             [0.0, 0.0, 0.0,-0.4]]))
+                tensor([[ 0,  0],
+                        [ 1,  1],
+                        [ 2,  2],
+                        [ 3,  3]])
+                >>> torch.nonzero(torch.tensor([1, 1, 1, 0, 1]), as_tuple=True)
+                (tensor([0, 1, 2, 4]),)
+                >>> torch.nonzero(torch.tensor([[0.6, 0.0, 0.0, 0.0],
+                ...                             [0.0, 0.4, 0.0, 0.0],
+                ...                             [0.0, 0.0, 1.2, 0.0],
+                ...                             [0.0, 0.0, 0.0,-0.4]]), as_tuple=True)
+                (tensor([0, 1, 2, 3]), tensor([0, 1, 2, 3]))
+                >>> torch.nonzero(torch.tensor(5), as_tuple=True)
+                (tensor([0]),)
+                '''
                 # Using advanced indexing instead of the double loop
+                # get pos of each nonzero: (tensor([0, 1, 2, 3]), tensor([0, 1, 2, 3]))
                 valid_indices = mask.nonzero(as_tuple=True)
+                # check if include batch dim
+                # tar[i,index[i,j]] = src[i,j]
                 if len(valid_indices) == 2:
+                    # tuple + same shape tuple = cat(tuple, tuple) -- 
                     tar[tuple(valid_indices[:-1]) + (index[valid_indices],)] = src[valid_indices]
+                # dim>2: include traj dim -- 计算loss时，torchgfn会把所有的traj上的state拼接在一起
                 else:
                     tar[valid_indices[:-1] + (index[valid_indices],)] = src[valid_indices]       
-                self.backward_masks[..., :env.one_hot_ndim*env.one_hot_seq_len] = tar
+                self.backward_masks[..., :act_low0] = tar
+
 
                 # 4) In the final part dealing with binary encoding, a divide-and-co \
                 # nquer approach is typically adopted for states 0 and 1. Specifical \
@@ -220,9 +307,9 @@ class MetaScheduleEnv(DiscreteEnv):
                 # the 1st value with 0 and 1, and 5 and 6 signify filling the 2nd va \
                 # lue with 0 and 1.
                 
-                self.backward_masks[..., env.one_hot_ndim*env.one_hot_seq_len: env.one_hot_ndim*env.one_hot_seq_len+2*env.binary_ndim*env.binary_seq_len:2] = \
+                self.backward_masks[..., act_low0: act_high0:2] = \
                     self.tensor[..., env.one_hot_seq_len:] == 0      
-                self.backward_masks[..., env.one_hot_ndim*env.one_hot_seq_len+1: env.one_hot_ndim*env.one_hot_seq_len+2*env.binary_ndim*env.binary_seq_len:2] = \
+                self.backward_masks[..., act_low0+1: act_high0:2] = \
                     self.tensor[..., env.one_hot_seq_len:] == 1    
 
 
@@ -308,11 +395,122 @@ class MetaScheduleEnv(DiscreteEnv):
         
         return states.tensor
     
+
+    def extract_features(
+        context: TuneContext,
+        candidates: List[MeasureCandidate],
+        results: Optional[List[RunnerResult]] = None,
+        extractor: Optional[FeatureExtractor] = None,
+    ):
+        """Extract feature vectors and compute mean costs.
+
+        Parameters
+        ----------
+        context: TuneContext
+            The tuning context.
+        candidates: List[MeasureCandidate]
+            The measure candidates.
+        results: Optional[List[RunnerResult]]
+            The measured results, can be None if used in prediction.
+        extractor: Optional[FeatureExtractor]
+            The feature extractor.
+
+        Returns
+        -------
+        new_features: List[np.ndarray]
+            The extracted features.
+        new_mean_costs: np.ndarray
+            The mean costs.
+        """
+        extractor = extractor or PerStoreFeature(extract_workload=True)
+
+        def _feature(feature: NDArray) -> np.ndarray:
+            return feature.numpy().astype("float32")
+
+        def _mean_cost(res: RunnerResult) -> float:
+            if not res.run_secs:
+                return 1e10
+            return float(np.median([float(s) for s in res.run_secs]))
+
+        new_features = [_feature(x) for x in extractor.extract_from(context, candidates)]
+        new_mean_costs = (
+            np.array([_mean_cost(x) for x in results]).astype("float32")
+            if results is not None
+            else None
+        )
+        return new_features, new_mean_costs
+
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
         canonical = raw_states
+        # print("canonical shape = ", canonical.shape)
         # energy is cost model
-        return self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
+        # NOTE: Add minus for low GPU latency
+        return -self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
+
+    # NOTE: add tlp 
+    def log_reward0(self, final_states: DiscreteStates) -> TT["batch_shape"]:
+        r'''
+        @torch.no_grad()
+        def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
+            self.model.eval()
+            features, _ = extract_features(context, candidates)
+            # NOTE: This is for speed up predict!
+            val_dataloader = SegmentDataloder_new(
+                features, shuffle=False
+            )
+            pred_results = []
+            for batch_data,_ in val_dataloader:
+                batch_data = batch_data.to(self.device)
+                outputs = self.model(batch_data)
+                pred_results.extend(outputs.detach().cpu().numpy())
+            return pred_results
+        '''
+        import tvm
+        from tvm import meta_schedule as ms
+        from tvm.ir import load_json
+        from tvm.target import Target
+        raw_states = final_states.tensor
+        canonical = raw_states
+        # print("canonical shape = ", canonical.shape) # torch.Size([16, 1455])
+        # energy is cost model -- tlp
+        # NOTE: Add minus for low GPU latency
+        self.energy.eval()
+        database = ms.database.JSONDatabase(
+            path_workload=workload_path,
+            path_tuning_record=candidate_path,
+        )
+        sample_init_population = tvm.get_global_func(
+            "meta_schedule.SearchStrategyEvolutionarySearchSampleInitPopulation"
+        )
+        evolve_with_cost_model = tvm.get_global_func(
+            "meta_schedule.SearchStrategyEvolutionarySearchEvolveWithCostModel"
+        )
+        strategy = ms.search_strategy.EvolutionarySearch(init_measured_ratio=0.0)
+        target = Target("nvidia/nvidia-a100")
+        context = ms.TuneContext(
+            mod=task,
+            target=target,
+            space_generator="post-order-apply",
+            search_strategy=strategy,
+        )
+        # context.initialize()
+        context.pre_tuning(
+            design_spaces=context.generate_design_space(),
+            database=database,
+            cost_model=ms.cost_model.RandomModel(),  # type: ignore
+        )
+        features, _ = self.extract_features(context, candidates)
+        val_dataloader = SegmentDataloder_new(
+            features, shuffle=False
+        )
+        pred_results = []
+        for batch_data,_ in val_dataloader:
+            batch_data = batch_data.to(self.device)
+            outputs = self.energy(batch_data)
+            pred_results.extend(outputs.detach().cpu().numpy())
+
+        return -self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
     #     """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""

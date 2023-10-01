@@ -48,6 +48,7 @@ class Sampler:
                 states.
         """
         module_output = self.estimator(states)
+        # distribution for sample
         dist = self.estimator.to_probability_distribution(
             states, module_output, **self.probability_distribution_kwargs
         )
@@ -94,18 +95,21 @@ class Sampler:
 
         
         device = states.tensor.device
-
+        # finish state: is backward, state is initial state, otherwise sink state
         dones = (
             states.is_initial_state
             if self.estimator.is_backward
             else states.is_sink_state
         )
-
+        # states in traj
         trajectories_states: List[TT["n_trajectories", "state_shape", torch.float]] = [
             states.tensor
         ]
+        # action in traj
         trajectories_actions: List[TT["n_trajectories", torch.long]] = []
+        # log prob of action in traj
         trajectories_logprobs: List[TT["n_trajectories", torch.float]] = []
+        # 
         trajectories_dones = torch.zeros(
             n_trajectories, dtype=torch.long, device=device
         )
@@ -114,18 +118,23 @@ class Sampler:
         )
 
         step = 0
-
+        # condition is True if done not all True -- not reach finish state
         while not all(dones):
+            # create action of dummy action with shape is (n_traj, )
             actions = env.Actions.make_dummy_actions(batch_shape=(n_trajectories,))
+            # log prob of action
             log_probs = torch.full(
                 (n_trajectories,), fill_value=0, dtype=torch.float, device=device
             )
+            # NOTE: step 1 -- Sample action & log prob
             valid_actions, actions_log_probs = self.sample_actions(env, states[~dones])
             actions[~dones] = valid_actions
             log_probs[~dones] = actions_log_probs
+            # add new action & log prob
             trajectories_actions += [actions]
             trajectories_logprobs += [log_probs]
-
+            # NOTE: step 2 -- apply action to state
+            # if backward sampler, apply action to state, get new state
             if self.estimator.is_backward:
                 new_states = env.backward_step(states, actions)
             else:
@@ -140,6 +149,7 @@ class Sampler:
                 else sink_states_mask
             ) & ~dones
             trajectories_dones[new_dones & ~dones] = step
+            # NOTE: step 3 -- get log reward
             try:
                 trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
                     states[new_dones & ~dones]

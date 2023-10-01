@@ -1,26 +1,30 @@
 import torch
 from tqdm import tqdm
+import wandb
 
-from gfn.gflownet import TBGFlowNet  # We use a GFlowNet with the Trajectory Balance (TB) loss
-from gfn.gym import HyperGrid,DiscreteEBM  # We use the hyper grid environment
-from gfn.modules import DiscretePolicyEstimator
-from gfn.samplers import Sampler
-from gfn.utils import NeuralNet  # NeuralNet is a simple multi-layer perceptron (MLP)
+from src.gfn.gflownet import TBGFlowNet  # We use a GFlowNet with the Trajectory Balance (TB) loss
+from src.gfn.gym import HyperGrid,DiscreteEBM  # We use the hyper grid environment
+from src.gfn.modules import DiscretePolicyEstimator
+from src.gfn.samplers import Sampler
+from src.gfn.utils import NeuralNet  # NeuralNet is a simple multi-layer perceptron (MLP)
 
 if __name__ == "__main__":
 
     # 1 - We define the environment
 
     # 8 - Define the Energy Function -- Cost Model
-    from gfn.utils.edm_model import mlp_ebm
+    from src.gfn.utils.edm_model import mlp_ebm
+    # mlp_ebm is MLP 
     edm_model = mlp_ebm(28*28,256,1).cuda()
     
-    env = DiscreteEBM(ndim=28*28,energy=edm_model,alpha=100,device_str="cuda")
+    env = DiscreteEBM(ndim=28*28,energy=edm_model,alpha=1, device_str="cuda")
+
     # env = HyperGrid(ndim=4, height=8, R0=0.01)  # Grid of size 8x8x8x8
 
     # 2 - We define the needed modules (neural networks)
 
     # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
+    # preprocessor is IdentityPreprocessor(), output_dim == ndim
     module_PF = NeuralNet(
         input_dim=env.preprocessor.output_dim,
         output_dim=env.n_actions
@@ -134,8 +138,21 @@ if __name__ == "__main__":
     # gfn.load_state_dict(checkpoint['gfn'])
     # edm_model.load_state_dict(checkpoint['edm'])
     
+    epoch = 5e4
+
+    wandb_project = "train discrete EBM GFlowNet"
+    use_wandb = len(wandb_project) > 0
+    if use_wandb:
+        wandb.init(project=wandb_project)
+        wandb.config.update({
+            "learning_rate": 0.02,
+            "architecture": "EBM GFlowNet",
+            "dataset": "MNIST",
+            "epochs": epoch,
+        })
+
     import os,sys
-    pbar = tqdm(range(365,500))
+    pbar = tqdm(range(0, int(epoch)))
     for i in (pbar):
             
         try:
@@ -165,15 +182,24 @@ if __name__ == "__main__":
         
         f_loss = gfn.loss(env, f_trajectories)
         b_loss = gfn.loss(env, b_trajectories)
-        loss = b_loss + f_loss # + edm_loss
+
+        # if int(i / 100 ) & 1 or int(i/50) & 1 or int(i/25) & 1:
+        loss = b_loss + f_loss
+        # else:
+        #     loss = b_loss + f_loss + edm_loss
         loss.backward()
         optimizer.step()
         
-        if i % 5 == 0:
+        if i % 20 == 0:
             reward = torch.exp(f_trajectories.log_rewards).mean().item()
             pbar.set_postfix({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "edm_loss": edm_loss.item(), "reward":reward})
             
+            # log metrics to wandb
+            wandb.log({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "edm_loss": edm_loss.item(), "reward":reward})
+
             f_states = f_trajectories.states
+            # f_states.detach() # AttributeError: 'DiscreteEBMStates' object has no attribute 'detach'
+
             total_synthesize_images = []
             for ii in range(f_states.tensor.shape[1]):
                 latest_state = f_states[-2,ii,...].tensor

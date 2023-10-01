@@ -158,6 +158,7 @@ class PerThreadData:
     
     @staticmethod
     def default_mutator_sampler(genetic_mutate_prob, mutator_probs,rand_state):
+        
         np.random.seed(rand_state)
         # all mutator results 
         mutators = []
@@ -438,6 +439,49 @@ class State:
         
         return results
     
+        # NOTE: important!!! -- adapt to GFlowNet
+    def GenerateMeasureCandidates0(self)->Optional[List[MeasureCandidate]]:
+        # check if tray max trials, not over max trials
+        if(self.st >= self.max_trials):
+            return None
+        sample_num = self.num_trials_per_iter
+        if self.ed > self.max_trials:
+            sample_num = self.max_trials - self.st
+            self.ed = self.max_trials
+        assert self.st < self.ed, f"check fail: {self.st} < {self.ed}"
+        pop = self.searchstrategy.population_size
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Generating candidates......")
+        # 1. pick best measure from database -- init is {None}
+        measured :List[Schedule] = self.pickbestfromdatabase(pop * self.searchstrategy.init_measured_ratio)
+        
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Picked top %s candidate(s) from database" % len(measured))
+        # 2. init popu -- sample unmeasured population from design space, merge into init population
+        unmeasured :List[Schedule] = self.SampleInitPopulation(pop - len(measured))
+        count_set = set()
+        for unmea in unmeasured:
+            s = str(unmea.mod)
+            count_set.add(s)
+        # unmeasured[0].mod.show()
+        # unmeasured[0].trace.show()
+        if(len(unmeasured) < self.searchstrategy.init_min_unmeasured):
+            self.logger(self.logger_key[2],__name__,current_line_number(),"Cannot sample enough initial population, evolutionary search failed.")
+            return None
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sample %s candidate(s)" % len(unmeasured))
+        inits = measured + unmeasured
+        # 3. get measure result from cost model
+        bests : List[Schedule] = self.EvolveWithCostModel(inits, sample_num) 
+        
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Got %s candidate(s) with evolutionary search" % len(bests))
+        # 4. avoid overfitting -- use PickWithEpsGreedy(), with eps ratio of rand unmeasured
+        picks:List[Schedule] = self.PickWithEpsGreedy(unmeasured,bests,sample_num)
+        self.logger(self.logger_key[1],__name__,current_line_number(),"Sendding %s candidates(s) for measurement" % len(picks))
+        if picks is None:
+            self.num_empty_iters+=1
+            
+            if self.num_empty_iters >= self.searchstrategy.num_empty_iters_before_early_stop:
+                return None
+        return AssembleCandidates(picks)
+
     # NOTE: important!!! -- adapt to GFlowNet
     def GenerateMeasureCandidates(self)->Optional[List[MeasureCandidate]]:
         # check if tray max trials, not over max trials

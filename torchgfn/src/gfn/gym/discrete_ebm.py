@@ -58,7 +58,7 @@ class DiscreteEBM(DiscreteEnv):
             device_str (str, optional): "cpu" or "cuda". Defaults to "cpu".
         """
         self.ndim = ndim
-
+        # -1 represent init state, 2 represent finish state
         s0 = torch.full((ndim,), -1, dtype=torch.long, device=torch.device(device_str))
         sf = torch.full((ndim,), 2, dtype=torch.long, device=torch.device(device_str))
 
@@ -68,7 +68,8 @@ class DiscreteEBM(DiscreteEnv):
             )
         self.energy: EnergyFunction = energy
         self.alpha = alpha
-
+        
+        # Each state has binary value
         n_actions = 2 * ndim + 1
         # the last action is the exit action that is only available for complete states
         # Action i in [0, ndim - 1] corresponds to replacing s[i] with 0
@@ -105,9 +106,11 @@ class DiscreteEBM(DiscreteEnv):
             def make_random_states_tensor(
                 cls, batch_shape: Tuple[int, ...]
             ) -> TT["batch_shape", "state_shape", torch.float]:
+                # ret tensor filled with random integers between [low, high) = [-1, 2)
                 return torch.randint(
                     -1,
                     2,
+                    # (bs, ) + (ndim, ) ==> (bs, ndim)
                     batch_shape + (env.ndim,),
                     dtype=torch.long,
                     device=env.device,
@@ -120,7 +123,7 @@ class DiscreteEBM(DiscreteEnv):
                 TT["batch_shape", "n_actions - 1", torch.bool],
             ]:
                 forward_masks = torch.zeros(
-                    self.batch_shape + (env.n_actions,),
+                    self.batch_shape + (env.n_actions,), # (bs, n_act)
                     device=env.device,
                     dtype=torch.bool,
                 )
@@ -133,7 +136,8 @@ class DiscreteEBM(DiscreteEnv):
                 return forward_masks, backward_masks
 
             def update_masks(self) -> None:
-                # The following two lines are for typing only.
+                # The following two lines are for casting type only.
+                # forward_mask shape is (batch_shape, n_actions), type is bool
                 self.forward_masks = cast(
                     TT["batch_shape", "n_actions", torch.bool],
                     self.forward_masks,
@@ -143,39 +147,51 @@ class DiscreteEBM(DiscreteEnv):
                     self.backward_masks,
                 )
 
+                # mask mark where is valid pos for forward & backward
+                # forward pos is val == -1 for first & second part, but final action is all val != -1
+                # backward first part is val == 0, second part is val == 1
+                # ... 
                 self.forward_masks[..., : env.ndim] = self.tensor == -1
                 self.forward_masks[..., env.ndim : 2 * env.ndim] = self.tensor == -1
+                # torch.all(input): test if all eles in input evaluate to True
                 self.forward_masks[..., -1] = torch.all(self.tensor != -1, dim=-1)
+                
                 self.backward_masks[..., : env.ndim] = self.tensor == 0
                 self.backward_masks[..., env.ndim : 2 * env.ndim] = self.tensor == 1
 
         return DiscreteEBMStates
-
+    # check if in final action
     def is_exit_actions(self, actions: TT["batch_shape"]) -> TT["batch_shape"]:
         return actions == self.n_actions - 1
-
+    # 针对 batch 根据action 将 state 某一个位置 设为0/1
     def maskless_step(
         self, states: States, actions: Actions
     ) -> TT["batch_shape", "state_shape", torch.float]:
         # First, we select that actions that replace a -1 with a 0.
         # Remove singleton dimension for broadcasting.
-        
+
+        # First make mask for action replacing -1 with 0
+        # mask_0 == [1, 0, 1, ..] mark if action < ndim
         mask_0 = (actions.tensor < self.ndim).squeeze(-1)
         # print(mask_0.shape)
         # print(states.tensor.shape,actions.tensor.shape)
         # torch.Size([16, 784]) torch.Size([16, 1])                                                                                                                                                 
         # torch.Size([16])
         
+        # dim=-1 represent last dim -- innermost dim [[[-1, -1, -1]]]
+        # Based on action & mask_0, set state into 0 -- final pos is pointed out action
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
             -1, actions.tensor[mask_0], 0  # Set indices to 0.
         )
         # Then, we select that actions that replace a -1 with a 1.
+        # mask_1 == [0, 1, 0, ..] mark if action >= ndim & action < 2*ndim
         mask_1 = (
             (actions.tensor >= self.ndim) & (actions.tensor < 2 * self.ndim)
         ).squeeze(
             -1
         )  # Remove singleton dimension for broadcasting.
         states.tensor[mask_1] = states.tensor[mask_1].scatter(
+            # map [ndim, 2*ndim-1] into [0, ndim-1]
             -1, (actions.tensor[mask_1] - self.ndim), 1  # Set indices to 1.
         )
         return states.tensor
@@ -185,10 +201,15 @@ class DiscreteEBM(DiscreteEnv):
     ) -> TT["batch_shape", "state_shape", torch.float]:
         # In this env, states are n-dim vectors. s0 is empty (represented as -1),
         # so s0=[-1, -1, ..., -1], each action is replacing a -1 with either a
-        # 0 or 1. Action i in [0, ndim-1] os replacing s[i] with 0, whereas
+        # 0 or 1. Action i in [0, ndim-1] is replacing s[i] with 0, whereas
         # action i in [ndim, 2*ndim-1] corresponds to replacing s[i - ndim] with 1.
         # A backward action asks "what index should be set back to -1", hence the fmod
         # to enable wrapping of indices.
+        # NOTE: As action \in [0, ndim-1] will set 0 in [0, ndim-1] as -1, 
+        # action \in [ndim, 2*ndim-1] will set 1 in [0, ndim-1] as -1 -- i & i+ndim map same pos i
+        # Use fmod() as operator tensor
+        # >>> torch.fmod(torch.tensor([-3., -2, -1, 1, 2, 3]), 2)
+        # tensor([-1., -0., -1.,  1.,  0.,  1.])
         return states.tensor.scatter(
             -1,
             actions.tensor.fmod(self.ndim),
@@ -198,13 +219,14 @@ class DiscreteEBM(DiscreteEnv):
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
         canonical = raw_states
-        # NOTE: modify for detach().view(-1)
-        return self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
+        # NOTE: modify for detach().view(-1) -- use energy() calculate reward
+        return -self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
 
     def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
         """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""
         states_raw = states.tensor
         canonical_base = 3 ** torch.arange(self.ndim - 1, -1, -1, device=self.device)
+        # sum(-1): along last dim compute sum
         return (states_raw + 1).mul(canonical_base).sum(-1).long()
 
     def get_terminating_states_indices(

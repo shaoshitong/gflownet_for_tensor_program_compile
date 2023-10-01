@@ -90,7 +90,6 @@ class FeatureGroup:
         return cls(key, data["features"], data["mean_costs"], data["min_cost"])        
 
 
-
 import logging
 #logger = get_logger("transformer")  # pylint: disable=invalid-name
 
@@ -116,8 +115,6 @@ def getLogger():
     logger.addHandler(fHandler)  
 
     return logger
-
-    
 
 # pylint: disable=too-many-instance-attributes
 class SegmentDataLoader:
@@ -407,6 +404,7 @@ def load_data(logger, datasets_all):
 
 
 def train(train_loader, val_dataloader, device, logger):
+    import wandb
 
     net = TransformerModule().to(device)
     # NOTE: specify device id order
@@ -419,7 +417,21 @@ def train(train_loader, val_dataloader, device, logger):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=n_epoch // 3, gamma=1)
     
+    wandb_project = "train TLP Cost Model"
+    use_wandb = len(wandb_project) > 0
+    if use_wandb:
+        wandb.init(project=wandb_project)
+        wandb.config.update({
+            "learning_rate": args.lr,
+            "architecture": "TLP Cost Model",
+            "dataset": "Dataset of Extract Features",
+            "epochs": n_epoch,
+        })
+
     logger.info("start train...")
+    best_net = net
+    min_loss = 1e5
+    best_it = 0
     for epoch in range(n_epoch):
         tic = time.time()
         
@@ -430,9 +442,10 @@ def train(train_loader, val_dataloader, device, logger):
             batch_label = batch_label.to(device)
             
             optimizer.zero_grad()
-            logger.info(f"shape: {batch_data.shape} dim0: {type(batch_data[0])}, type: {batch_data.dtype}")
+            # logger.info(f"shape: {batch_data.shape} dim0: {type(batch_data[0])}, type: {batch_data.dtype}")
             loss = loss_func(net(batch_data), batch_label)
             loss.backward()
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             nn.utils.clip_grad_norm_(net.parameters(), 0.5)
             optimizer.step()
             train_loss += loss.item()
@@ -442,12 +455,19 @@ def train(train_loader, val_dataloader, device, logger):
         avg_train_loss = train_loss/len(train_loader)
         valid_loss = validate(net, val_dataloader, loss_func, device)
         loss_msg = "Train Loss: %.4f\tValid Loss: %.4f" % (avg_train_loss, valid_loss)
-        logger.info(f"Epoch: {epoch}\tBtach: {batch}\t{loss_msg}\tTrian Speed: {len(train_loader)/train_time}")
+        logger.info(f"Epoch: {epoch}\tBatch: {batch}\t{loss_msg}\tTrian Speed: {len(train_loader)/train_time}")
+        wandb.log({"Epoch": epoch, "Batch": batch, "Train Speed": len(train_loader)/train_time, "Train Loss": avg_train_loss,"Valid Loss": valid_loss})
         
-        save_model_path = "%s/tlp_model_%d.pkl" %(args.save_model_path, epoch)
-        with open(save_model_path, 'wb') as f:
-            pickle.dump(net.cpu(), f)
-        net.to(device)            
+        if valid_loss < min_loss:
+            best_net = net
+            best_it = epoch
+            min_loss = valid_loss
+
+    # checkpoint = {"tlp" : best_net.state_dict()}
+    torch.save(best_net, "%s/tlp_model_%d.pth" %(args.save_model_path, best_it))
+    # with open(save_model_path, 'wb') as f:
+    #     pickle.dump(best_net.cpu(), f)
+    # net.to(device)            
         
 def set_seed(seed):
     np.random.seed(seed)
@@ -461,8 +481,6 @@ def set_seed(seed):
 
 
 set_seed(0)
-
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -480,9 +498,9 @@ if __name__ == "__main__":
 
     parser.add_argument("--train_size_per_gpu", type=int, default=512)
     parser.add_argument("--val_size_per_gpu", type=int, default=512)
-    parser.add_argument("--n_epoch", type=int, default=15)
+    parser.add_argument("--n_epoch", type=int, default=500)
     parser.add_argument("--target", type=str, default="nvidia/nvidia-a100")
-    parser.add_argument("--save_model_path", type=str, default="/root/kongdehao/model")
+    parser.add_argument("--save_model_path", type=str, default="/root/kongdehao/model/tlp")
     
     args = parser.parse_args()
     

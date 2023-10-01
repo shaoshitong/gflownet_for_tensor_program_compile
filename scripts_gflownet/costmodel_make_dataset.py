@@ -105,22 +105,23 @@ def extract_features(
     def _feature(feature: NDArray) -> np.ndarray:
         return feature.numpy().astype("float32")
     
-    # NOTE: score is runtime, val is variance, tau is temperature factor
-    def normalize_score(score,
-                        _mean = 0.003680646535107316, 
-                        _val = 0.0012118761480652196,
-                        _min = 2.8831801089918256e-06,
-                        _max = 4.567233072666666,
-                        _tau = 1):
-        score = (score - _mean) / (_val ** (1/2))
-        return torch.log(torch.sigmoid(score / _tau))
+    # # NOTE: score is runtime, val is variance, tau is temperature factor
+    # def normalize_score(score,
+    #                     _mean = 0.003680646535107316, 
+    #                     _val = 0.0012118761480652196,
+    #                     _min = 2.8831801089918256e-06,
+    #                     _max = 4.567233072666666,
+    #                     _tau = 1):
+    #     score = (score - _mean) / (_val ** (1/2))
+    #     return torch.log(torch.sigmoid(score / _tau))
 
     def _mean_cost(res: RunnerResult) -> float:
         if not res.run_secs:
             return 1e10
         # NOTE: convert into min()
         # return float(np.median([float(s) for s in res.run_secs]))
-        return float(normalize_score(torch.Tensor([np.min([float(s) for s in res.run_secs])])))
+        # return float(normalize_score(torch.Tensor([np.min([float(s) for s in res.run_secs])])))
+        return float(np.min([float(s) for s in res.run_secs]))
     
     # def _mean_cost(res: RunnerResult) -> float:
     #     if not res.run_secs:

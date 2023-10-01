@@ -80,20 +80,26 @@ class tlpCostModel(PyCostModel):
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
         # NOTE: update relative path to tlp model
-    def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
+    # def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
+    def load(self, path: str = "/root/kongdehao/model/tlp/tlp_model_73.pth") -> None:
         # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
-        if not os.path.exists(path):
-            path = "../" + path
-            if not os.path.exists(path):
-                raise NotImplementedError(f"{path} not exists!")
+        # self.model = TransformerModule().to(self.device)
+        self.model = torch.load(path, map_location=self.device)
+        # self.model.load_state_dict(checkpoint["tlp"])
+        
+        # if not os.path.exists(path):
+        #     path = "../" + path
+        #     if not os.path.exists(path):
+        #         raise NotImplementedError(f"{path} not exists!")
 
-        with open(path, 'rb') as f:
+        # with open(path, 'rb') as f:
             # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
-            self.model = pickle.load(f)  
-        self.model.to(self.device)
+        #     name, self.model = torch.load(f)  
+        # self.model.to(self.device)
           
     def save(self, path: str) -> None:
         pass
+    
     def update(
         self,
         context: TuneContext,

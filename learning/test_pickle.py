@@ -6,6 +6,8 @@
 
 import pickle
 from tvm.meta_schedule.cost_model.tlp_cost_model_train import TransformerModule
+# from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
+
 path = "/root/kongdehao/model/tlp_model_14.pkl"
 
 with open(path, 'rb') as f:
