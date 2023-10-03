@@ -26,8 +26,8 @@ from tvm.meta_schedule.search_strategy import MeasureCandidate
 from tvm.meta_schedule.tune_context import TuneContext
 from typing import Dict, List, NamedTuple, Optional, Tuple
 from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
-
-# mymodule.py
+import multiprocessing
+from multiprocessing.pool import ThreadPool
 import os
 import sys
 # Add the parent directory of mypackage to the Python path
@@ -73,49 +73,23 @@ def tlp_data_save(data_path, save_path):
             count_ptr += 1
 
 
-class RecordDataset(Dataset):
-
-    def __init__(self, databases):
-        self.target = "nvidia/nvidia-a100"
-        self.databases = databases
-
-    def __len__(self):
-        return len(self.databases)
-
-    def __getitem__(self, idx):
-
-        database = self.databases[idx]
-        # database made up of records, including candidates info
-        records = database.get_all_tuning_records()
-        record = records[0]
-        candidates = record.as_measure_candidate()
-        results = (RunnerResult(run_secs=record.run_secs, error_msg=None))
-        context = TuneContext(mod=record.workload.mod,
-                              target=Target(self.target))
-        return (context, candidates)
-
-# Load above GFlowNet Dataset for search, ret dataloader
+# def worker0(workload_file):
 
 
-def record_data_load(data_path):
+#     # print(len(database.get_all_tuning_records()))
 
-    workload_paths = []
-    candidate_path = []
-    workload_paths = sorted(glob.glob(os.path.join(
-        data_path, "*workload*.json"), recursive=True))
+#     return database
 
-    for workload_file in workload_paths:
-        candidate_path.append(workload_file.replace("workloads", "candidates"))
 
-    databases = []
+# def record_data_load(data_path):
 
-    for i in range(len(workload_paths)):
-        # print(f"workload = {workload_paths[i]}, candidate = {candidate_path[i]}")
-        database = database = ms.database.JSONDatabase(
-            path_workload=workload_paths[i], path_tuning_record=candidate_path[i])
-        databases.append(database)
+#     pool = multiprocessing.Pool(112)
+#     # pool = ThreadPool()
 
-    return databases
+
+#     databases = pool.map(worker0, workload_paths)
+
+#     return databases
 
 
 def extract_features(
@@ -156,6 +130,8 @@ def restore_embedding(decode_info):
     xs, databases, decodes, orders, conds, ptrs, target = decode_info
     bs = xs.shape[0]
     contexts, candidates = [], []
+    print("len of xs", len(xs))
+    # TODO:.. print(len)
 
     for i in range(bs):
         x, database, decode, order, cond, ptr = \
@@ -197,7 +173,7 @@ def restore_embedding(decode_info):
         gm = GflowNetEmbedding()
         new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=res,
                                               embedding_conditions=cond, count_Ptr_results=ptr)
-        print("Successful generate new instruction & decisions")
+        # print("Successful generate new instruction & decisions")
 
         # database made up of records, including candidates info
         records = database.get_all_tuning_records()
@@ -234,9 +210,14 @@ def restore_embedding(decode_info):
         record = records[-1]
         candidate = record.as_measure_candidate()
         context = TuneContext(mod=record.workload.mod, target=Target(target))
+        # TODO: check same context
+        # if len(contexts) > 0:
+        #     if context != contexts[-1]:
+        #         print("diff context")
 
         contexts.append(context)
         candidates.append(candidate)
+        print(f"construct context & candidates {i}")
 
     features, _ = extract_features(contexts[0], candidates)
 

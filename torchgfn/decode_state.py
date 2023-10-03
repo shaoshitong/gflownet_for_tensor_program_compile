@@ -118,9 +118,9 @@ if __name__ == "__main__":
     np.load = lambda *a, **k: np_load_old(*a, allow_pickle=True, **k)
 
     record_path = "/root/share/dataset/tlp_dataset0"
-    databases = record_data_load(record_path)
-    print("Successful load all record database")
-    bs = 16
+    # databases = record_data_load(record_path)
+    # print(f"Successful load all record database size = {len(databases)}")
+    bs = 512
     dataloader, data_num = gflownet_data_load(
         root, without_condition=False, num_workers=4, batch_size=bs)
     # record_iter = iter(record_dataloader)
@@ -134,29 +134,38 @@ if __name__ == "__main__":
         cond = None
         ptr = None
         # record, decode, order, last_embedding, run_secs, last_condition, last_ptr_list
+        for step, (decode, order, x, score, cond, ptr) in enumerate(train_iter):
+            # try:
+            #     decode, order, x, score, cond, ptr = next(train_iter)
+            # except:
+            #     train_iter = iter(dataloader)
+            #     decode, order, x, score, cond, ptr = next(train_iter)
+            # data_num: 3191
+            begin = (step*bs) % data_num
+            end = (step*bs+bs) % data_num
+            # np.savez(os.path.join(info_path, f'info{s}.npz'), x=x[0], database=databases[begin+0],
+            #          decode=decode[0], order=order[0],  cond=cond[0], ptr=ptr[0], target=target)
 
-        try:
-            decode, order, x, score, cond, ptr = next(train_iter)
-        except:
-            train_iter = iter(dataloader)
-            decode, order, x, score, cond, ptr = next(train_iter)
+            x = x.cuda(non_blocking=True).long()
+            # Convert into [batch, -1]
+            x = x.view(x.shape[0], -1)
+            score = normalize_score(score.cuda(non_blocking=True))
+            # create env state
+            states = env.States(x)
+            
+            workload_paths = sorted(
+                [os.path.join(record_path, f"workloads_{step*bs+i}.json") for i in range(bs)])
+            candidate_paths = [workload_path.replace(
+                "workloads", "candidates") for workload_path in workload_paths]
+            num = len(candidate_paths)
 
-        begin = (s*bs) % data_num
-        end = (s*bs+bs) % data_num
-        np.savez(os.path.join(info_path, f'info{s}.npz'), x=x[0], database=databases[begin+0],
-                 decode=decode[0], order=order[0],  cond=cond[0], ptr=ptr[0], target=target)
+            databases = [ms.database.JSONDatabase(
+                path_workload=workload_paths[i], path_tuning_record=candidate_paths[i]) for i in range(num)]
+            info = (states.tensor, databases,
+                    decode, order, cond, ptr, target)
+            features = restore_embedding(info)
+            print(f"Successful from {step} to {step+bs}!")
 
-        x = x.cuda(non_blocking=True).long()
-        # Convert into [batch, -1]
-        x = x.view(x.shape[0], -1)
-        score = normalize_score(score.cuda(non_blocking=True))
-        # create env state
-        states = env.States(x)
-
-        info = (states.tensor, databases[begin:end],
-                decode, order, cond, ptr, target)
-        features = restore_embedding(info)
-        print("Successful!")
         # print("Successful generate new instruction & decisions")
 
         # # database made up of records, including candidates info
@@ -181,9 +190,9 @@ if __name__ == "__main__":
         #     Target(target),
         #     candidate.args_info))
 
-    #     # NOTE: step 1 -- sample trajectory
-    #     f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
-    #     b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
+        # NOTE: step 1 -- sample trajectory
+        # f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
+        # b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
     #     # TODO: real_y that for training fake cost model -- discriminator
     #     # real_y = edm_model(x.float())
 

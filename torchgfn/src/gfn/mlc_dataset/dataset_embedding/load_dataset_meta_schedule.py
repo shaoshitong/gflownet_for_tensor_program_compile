@@ -27,18 +27,24 @@ from tqdm import tqdm  # type: ignore
 from tvm import meta_schedule as ms
 from tvm.ir import load_json
 from tvm.target import Target
+import multiprocessing
+from multiprocessing.pool import ThreadPool
 
 
-def load_workload_and_candidate(workload_path,candidate_path):
-    database = ms.database.JSONDatabase(path_workload=workload_path,path_tuning_record=candidate_path)
+def load_workload_and_candidate(workload_path, candidate_path):
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
     return database
 
+
 def search_all_files(work_dir):
-    workload_files = sorted(glob.glob(os.path.join(work_dir, "**/*_workload.json"),recursive=True))
+    workload_files = sorted(glob.glob(os.path.join(
+        work_dir, "**/*_workload.json"), recursive=True))
     results = []
     for workload_file in workload_files:
-        candidate_file = workload_file.replace("_workload.json","_candidates.json")
-        wc_pair = (workload_file,candidate_file)
+        candidate_file = workload_file.replace(
+            "_workload.json", "_candidates.json")
+        wc_pair = (workload_file, candidate_file)
         results.append(wc_pair)
     return results
 
@@ -46,11 +52,17 @@ def search_all_files(work_dir):
 def load_all_files(work_dir):
     results = search_all_files(work_dir)
     databases = []
-    
+    pool = multiprocessing.Pool(112)
+
     for result in results:
-        database = load_workload_and_candidate(*result)
+        workload_path, candidate_path = result
+        database = pool.apply_async(
+            load_workload_and_candidate, args=(workload_path, candidate_path))
+        # database = load_workload_and_candidate(*result)
         databases.append(database)
+
     return databases
+
 
 def _parse_args():
     parser = argparse.ArgumentParser()
@@ -66,8 +78,8 @@ def _parse_args():
     )
     return parser.parse_args()
 
+
 if __name__ == "__main__":
 
     args = _parse_args()
     load_all_files(args.work_dir)
-    
