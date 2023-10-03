@@ -70,7 +70,8 @@ def extract_features(
 @derived_object
 class tlpCostModel(PyCostModel):
     # NOTE: cuda:7 is corresponding to 
-    def __init__(self, *, device='cuda:0') -> None:
+    # def __init__(self, *, device='cuda:0') -> None:
+    def __init__(self, *, device='cuda:7') -> None:
         super().__init__()
         # print("----------------------------Enter __init__ func")
         self.device = device
@@ -80,22 +81,12 @@ class tlpCostModel(PyCostModel):
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
         # NOTE: update relative path to tlp model
-    # def load(self, path: str = "python/tvm/meta_schedule/cost_model/tlp_model_14.pkl") -> None:
-    def load(self, path: str = "/root/kongdehao/model/tlp/tlp_model_73.pth") -> None:
-        # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&Enter load func")
-        # self.model = TransformerModule().to(self.device)
-        self.model = torch.load(path, map_location=self.device)
-        # self.model.load_state_dict(checkpoint["tlp"])
-        
-        # if not os.path.exists(path):
-        #     path = "../" + path
-        #     if not os.path.exists(path):
-        #         raise NotImplementedError(f"{path} not exists!")
-
-        # with open(path, 'rb') as f:
-            # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
-        #     name, self.model = torch.load(f)  
-        # self.model.to(self.device)
+    def load(self, path: str = "/root/kongdehao/model/median_tlp/save_model_v2/tlp_model_14.pkl") -> None:
+    # def load(self, path: str = "/root/kongdehao/model/tlp/tlp_model_73.pth") -> None:
+        # self.model = torch.load(path, map_location=self.device)
+        with open(path, 'rb') as f:
+            self.model = pickle.load(f)  
+        self.model.to(self.device)
           
     def save(self, path: str) -> None:
         pass

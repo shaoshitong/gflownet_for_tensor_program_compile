@@ -139,7 +139,7 @@ def extract_features(
 def handle_json(model_dir:str):
     workload_paths = []
     candidate_path = []
-    json_files = glob.glob(os.path.join(model_dir, "*.json"))
+    json_files = sorted(glob.glob(os.path.join(model_dir, "*.json"),recursive=True))
     for json_file in json_files:
         if json_file.endswith("_workload.json"):
             workload_paths.append(json_file)

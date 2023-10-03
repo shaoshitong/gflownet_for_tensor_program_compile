@@ -1,13 +1,31 @@
-import tvm,os
+import glob
+from .dataset_embedding import GflowNetEmbedding, load_all_files, load_workload_and_candidate
+import tvm
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
-from tvm.meta_schedule.cost_model.tlp_cost_model_train import from_json,load_data
+from tvm.meta_schedule.cost_model.tlp_cost_model_train import from_json, load_data
 # from .dataset_embedding import GflowNetEmbedding, load_all_files
 from tvm import meta_schedule as ms
 from tvm.ir import load_json
+
+import tvm
+from tvm.meta_schedule.database import JSONDatabase
+from tvm.meta_schedule.runner import RunnerResult
+from tvm.meta_schedule import TuneContext, FeatureExtractor, MeasureCandidate
 from tvm.target import Target
+from tvm.meta_schedule.feature_extractor import PerStoreFeature
+from tvm.runtime import NDArray
+from tvm.meta_schedule.utils import shash2hex
+import numpy as np
+from tvm.runtime import NDArray
+from tvm.meta_schedule.runner import RunnerResult
+from tvm.meta_schedule.search_strategy import MeasureCandidate
+from tvm.meta_schedule.tune_context import TuneContext
+from typing import Dict, List, NamedTuple, Optional, Tuple
+from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
 
 # mymodule.py
 import os
@@ -16,7 +34,213 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Import subpackage.submodule
 # from mypackage.subpackage import submodule
-from .dataset_embedding import GflowNetEmbedding, load_all_files
+
+
+def tlp_data_save(data_path, save_path):
+    target = "nvidia/nvidia-a100"
+    count_ptr = 0
+
+    databases = load_all_files(data_path)
+    print("Successfully Load Databases!")
+    candidates, results = [], []
+    for database in databases:
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        for record in records:
+            candidates.append(record.as_measure_candidate())
+            results.append(RunnerResult(
+                run_secs=record.run_secs, error_msg=None))
+            context = TuneContext(mod=record.workload.mod,
+                                  target=Target(target))
+
+            new_database = ms.database.JSONDatabase(
+                path_workload=os.path.join(
+                    save_path, f"workloads_{count_ptr}.json", ),
+                path_tuning_record=os.path.join(
+                    save_path, f"candidates_{count_ptr}.json"),
+            )
+            workload = record.workload
+            new_database.commit_workload(workload.mod)
+            new_database.commit_tuning_record(
+                ms.database.TuningRecord(
+                    trace=record.trace,
+                    workload=workload,
+                    run_secs=record.run_secs,
+                    target=Target(target),
+                )
+            )
+            print(f"Successfully Save File database_{count_ptr}")
+            count_ptr += 1
+
+
+class RecordDataset(Dataset):
+
+    def __init__(self, databases):
+        self.target = "nvidia/nvidia-a100"
+        self.databases = databases
+
+    def __len__(self):
+        return len(self.databases)
+
+    def __getitem__(self, idx):
+
+        database = self.databases[idx]
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        record = records[0]
+        candidates = record.as_measure_candidate()
+        results = (RunnerResult(run_secs=record.run_secs, error_msg=None))
+        context = TuneContext(mod=record.workload.mod,
+                              target=Target(self.target))
+        return (context, candidates)
+
+# Load above GFlowNet Dataset for search, ret dataloader
+
+
+def record_data_load(data_path):
+
+    workload_paths = []
+    candidate_path = []
+    workload_paths = sorted(glob.glob(os.path.join(
+        data_path, "*workload*.json"), recursive=True))
+
+    for workload_file in workload_paths:
+        candidate_path.append(workload_file.replace("workloads", "candidates"))
+
+    databases = []
+
+    for i in range(len(workload_paths)):
+        # print(f"workload = {workload_paths[i]}, candidate = {candidate_path[i]}")
+        database = database = ms.database.JSONDatabase(
+            path_workload=workload_paths[i], path_tuning_record=candidate_path[i])
+        databases.append(database)
+
+    return databases
+
+
+def extract_features(
+    context: TuneContext,
+    candidates: List[MeasureCandidate],
+    results: Optional[List[RunnerResult]] = None,
+    extractor: Optional[FeatureExtractor] = None,
+):
+
+    extractor = extractor or PerStoreFeature(extract_workload=True)
+
+    def _feature(feature: NDArray) -> np.ndarray:
+        return feature.numpy().astype("float32")
+
+    def _mean_cost(res: RunnerResult) -> float:
+        if not res.run_secs:
+            return 1e10
+        return float(np.median([float(s) for s in res.run_secs]))
+
+    new_features = [_feature(x)
+                    for x in extractor.extract_from(context, candidates)]
+    #  np.array([_mean_cost(x) for x in results]).astype("float32")
+    new_mean_costs = None
+    new_mean_costs = (
+        np.array([_mean_cost(x) for x in results]).astype("float32")
+        if results is not None
+        else None
+    )
+
+    return new_features, new_mean_costs
+
+
+def restore_embedding(decode_info):
+
+    import torch.nn.functional as Fun
+    MAX_NUMBER = 15
+    # (bs, ...)
+    xs, databases, decodes, orders, conds, ptrs, target = decode_info
+    bs = xs.shape[0]
+    contexts, candidates = [], []
+
+    for i in range(bs):
+        x, database, decode, order, cond, ptr = \
+            xs[i], databases[i], decodes[i], orders[i], conds[i], ptrs[i]
+
+        res_x, res_y, cond_x, cond_y, max_len, emb0_x, emb1_x = decode
+        ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
+
+        ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
+        ex_emb0 = Fun.one_hot(ex_emb0, num_classes=10)
+
+        emb0_x = emb0_x.item()
+        emb1_x = emb1_x.item()
+
+        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
+        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
+        # convert cuda:0 device into cpu
+        emb0 = emb0.cpu()
+        emb1 = emb1.cpu()
+
+        res = []
+        p0 = 0  # emb0 position
+        p1 = 0  # emb1
+        for i in range(max_len):
+            if order[i] == 0:
+                res.append(emb0[p0].numpy())
+                p0 += 1
+            else:
+                res.append(emb1[p1].numpy())
+                p1 += 1
+
+        max_cond_len = 300
+        cond, _ = torch.split(
+            cond, [cond_x*cond_y, max_cond_len-cond_x*cond_y], 0)
+        cond = list(cond.view(cond_x, cond_y).numpy())
+        ptr = ptr.int()
+        ptr = ptr.tolist()
+
+        gm = GflowNetEmbedding()
+        new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=res,
+                                              embedding_conditions=cond, count_Ptr_results=ptr)
+        print("Successful generate new instruction & decisions")
+
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        record = records[0]
+        candidate = record.as_measure_candidate()
+        # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
+        context = TuneContext(mod=record.workload.mod, target=Target(target))
+
+        sub_sch = candidate.sch
+        # trace include instructions & decisions
+        sub_trace = sub_sch.trace
+        # Must use with_decision() to set sub_trace
+        for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
+            sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
+
+        from tvm.meta_schedule.database.database import TuningRecord
+
+        # new_database = ms.database.JSONDatabase(
+        #     path_workload="/root/share/dataset/new_database",
+        #     path_tuning_record="/root/share/dataset/new_database",
+        # )
+        new_database = database
+        new_database.commit_workload(record.workload.mod)
+        new_database.commit_tuning_record(TuningRecord(
+            sub_trace,
+            record.workload,
+            record.run_secs,
+            Target(target),
+            candidate.args_info))
+
+        records = new_database.get_all_tuning_records()
+        # print("records shape = ", len(records))
+        # NOTE: commit add new candidates in json
+        record = records[-1]
+        candidate = record.as_measure_candidate()
+        context = TuneContext(mod=record.workload.mod, target=Target(target))
+
+        contexts.append(context)
+        candidates.append(candidate)
+
+    features, _ = extract_features(contexts[0], candidates)
+
+    return features
 
 
 # To make a GFlowNet dataset
@@ -29,7 +253,7 @@ def gflownet_data_save(data_path, save_path):
     print("Successfully Load Databases!")
     datasets = []
     count_ptr = 0
-    
+
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
@@ -38,7 +262,7 @@ def gflownet_data_save(data_path, save_path):
         if not res.run_secs:
             return 1e10
         return float(np.min([float(s) for s in res.run_secs]))
-    
+
     max_cond_len = 0
     max_order_len = 0
 
@@ -47,23 +271,24 @@ def gflownet_data_save(data_path, save_path):
         records = database.get_all_tuning_records()
         for record in records:
             if os.path.exists(f"mlc_{count_ptr}.npz"):
-                count_ptr+=1
+                count_ptr += 1
                 print(f"Passing mlc_{count_ptr}.npz")
                 continue
             # convert record into measured candidates
-            # measure_candidate for 
+            # measure_candidate for
             sub_sch = record.as_measure_candidate().sch
             # record.workload is workload info
             min_cost = _min_cost(record)
             sub_trace = sub_sch.trace
             sub_insts = sub_trace.insts
             sub_decisions = sub_trace.decisions
-            
+
             extend_embedding_0 = []
             extend_embedding_1 = []
             # list(3, 10) (3, 24) (3, 1) -- anno/cuda
             # (3, 96) (3, 24) (3, 1) -- sample tile
-            embedding_results,embedding_conditions,count_ptr_list = gm(sub_insts,sub_decisions,True)
+            embedding_results, embedding_conditions, count_ptr_list = gm(
+                sub_insts, sub_decisions, True)
             # NOTE: result shape (x, y) for decode
             res_x = len(embedding_results)
             res_y = embedding_results[0].shape[0]
@@ -79,17 +304,19 @@ def gflownet_data_save(data_path, save_path):
             for embedding in embedding_results:
                 max_len += 1
                 _len = embedding.shape[0]
-                if _len > 10: # If the primitive type is the sample perfectile -- len = 96
+                if _len > 10:  # If the primitive type is the sample perfectile -- len = 96
                     order.append(1)
-                    extend_embedding_1.append(torch.from_numpy(embedding.reshape(-1)))
+                    extend_embedding_1.append(
+                        torch.from_numpy(embedding.reshape(-1)))
                     # print("Sample Perfect Tile shape: ", extend_embedding_1[-1].shape)
-                else: # prim type is other type: annotation & cuda bind -- len = 10
+                else:  # prim type is other type: annotation & cuda bind -- len = 10
                     order.append(0)
-                    extend_embedding_0.append(torch.from_numpy(embedding.squeeze()))
+                    extend_embedding_0.append(
+                        torch.from_numpy(embedding.squeeze()))
                     # print("Annotation & CUDA Bind shape: ", extend_embedding_0[-1].shape)
             if max_len > max_order_len:
                 max_order_len = max_len
-                
+
             decode += [max_len]
             # NOTE: Padding to max length for embeddings
             # TODO: Need padding condition
@@ -98,43 +325,46 @@ def gflownet_data_save(data_path, save_path):
             # flag for if embedding_0/embedding_1 exist
             exist_0 = True
             exist_1 = True
-            # stack for convert [(10, ), (10, )..] into (3, 10) 
-            if len(extend_embedding_0)>0:            
+            # stack for convert [(10, ), (10, )..] into (3, 10)
+            if len(extend_embedding_0) > 0:
                 extend_embedding_0 = torch.stack(extend_embedding_0, 0)
-            else: # first shape is 15*10 -- binary vector
+            else:  # first shape is 15*10 -- binary vector
                 exist_0 = False
-                extend_embedding_0 = torch.zeros(MAX_NUMBER,10)
-            # stack for convert [(96, ), (96, )..] into (6, 96) 
-            if len(extend_embedding_1)>0:
+                extend_embedding_0 = torch.zeros(MAX_NUMBER, 10)
+            # stack for convert [(96, ), (96, )..] into (6, 96)
+            if len(extend_embedding_1) > 0:
                 extend_embedding_1 = torch.stack(extend_embedding_1, 0)
-            else: # second shape is 15*96 -- binary vector
+            else:  # second shape is 15*96 -- binary vector
                 exist_1 = False
-                extend_embedding_1 = torch.zeros(MAX_NUMBER,96)
+                extend_embedding_1 = torch.zeros(MAX_NUMBER, 96)
 
             # NOTE: add embedding 0/1 shape into decode info
             sz1 = extend_embedding_0.shape[0]
             sz2 = extend_embedding_1.shape[0]
             decode += (sz1, sz2)
-            
+
             # NOTE: padding zeros, shape[1] is same -- convert into (15, ..)
             extend_embedding_0 = torch.cat([extend_embedding_0,
-                                            torch.zeros(MAX_NUMBER - sz1,extend_embedding_0.shape[1]).to(extend_embedding_0.device)],0)
+                                            torch.zeros(MAX_NUMBER - sz1, extend_embedding_0.shape[1]).to(extend_embedding_0.device)], 0)
             extend_embedding_1 = torch.cat([extend_embedding_1,
-                                            torch.zeros(MAX_NUMBER - sz2,extend_embedding_1.shape[1]).to(extend_embedding_1.device)],0)
-            
+                                            torch.zeros(MAX_NUMBER - sz2, extend_embedding_1.shape[1]).to(extend_embedding_1.device)], 0)
+
             # Now extend_embedding_0's shape is (15,10), and extend_embedding_1's shape is (15,96)
-            # After that, we flatten and concatenate them.            
-            extend_embedding_0 = torch.argmax(extend_embedding_0,-1) # Translate one-hot to label (15, )
-            extend_embedding_1 = extend_embedding_1.flatten() # Flatten it into (1440, )
+            # After that, we flatten and concatenate them.
+            # Translate one-hot to label (15, )
+            extend_embedding_0 = torch.argmax(extend_embedding_0, -1)
+            extend_embedding_1 = extend_embedding_1.flatten()  # Flatten it into (1440, )
 
             # Concatenate them, the last_embedding's shape is (15+15*96, ) = (1455)
-            last_embedding = torch.cat([extend_embedding_0,extend_embedding_1], 0) 
+            last_embedding = torch.cat(
+                [extend_embedding_0, extend_embedding_1], 0)
             # for embedding_condition in embedding_conditions:
             #     print("embedding condition shape: ", embedding_condition.shape)
-            
+
             # NOTE: We do not need to translate it at a fine-grained level.
             # (3, 24) --> (72, )
-            last_condition = torch.cat([torch.from_numpy(embedding_condition.astype(int).reshape(-1)) for embedding_condition in embedding_conditions],0) 
+            last_condition = torch.cat([torch.from_numpy(embedding_condition.astype(
+                int).reshape(-1)) for embedding_condition in embedding_conditions], 0)
             if max_cond_len < last_condition.shape[0]:
                 max_cond_len = last_condition.shape[0]
 
@@ -144,98 +374,33 @@ def gflownet_data_save(data_path, save_path):
             # print("not padding condition shape: ", last_condition.shape) # torch.Size([72])
             # print("last ptr list shape: ", last_ptr_list.shape) # torch.Size([3])
             # NOTE: We define attr in dataset: last_embedding, last_condition, last_ptr_lis, run_secs
-            np.savez(os.path.join(save_path,f'mlc_{count_ptr}.npz'), record = [record], decode = decode, 
-                     order = order, last_embedding = last_embedding, last_condition = last_condition, 
-                     last_ptr_list = last_ptr_list, run_secs = min_cost)
+            np.savez(os.path.join(save_path, f'mlc_{count_ptr}.npz'),  decode=decode,
+                     order=order, last_embedding=last_embedding, last_condition=last_condition,
+                     last_ptr_list=last_ptr_list, run_secs=min_cost)
             print(f"Successfully Save File mlc_{count_ptr}.npz")
-            count_ptr+=1
+            count_ptr += 1
 
     print("Max Condition len = ", max_cond_len)
     print("Max order len = ", max_order_len)
-    
-def restore_embedding(decode, order, last_embedding, last_condition, last_ptr_list):
-    # torch.split() to split a tensor into a list of tensors along a given dimension
-    # you need to specify the number of splits and the size of each split
-    r'''
-    # Concatenate the tensors along the first dimension
-    z = torch.cat([x, y], dim=0)
-
-    # Split the concatenated tensor back into its original inputs
-    x_new, y_new = torch.split(z, [3, 3], dim=0)
-
-    '''
-    import torch.nn.functional as Fun
-    MAX_NUMBER = 15
-    # print(decode)
-
-    res_x, res_y, cond_x, cond_y, max_len, emb0_x, emb1_x = decode
-    ex_emb0, ex_emb1 = torch.split(last_embedding, [MAX_NUMBER, MAX_NUMBER*96], 0)
-    
-    ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
-    ex_emb0 = Fun.one_hot(ex_emb0, num_classes=10)
-
-    emb0_x = emb0_x.item()
-    emb1_x = emb1_x.item()
-
-    emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
-    emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
-    # convert cuda:0 device into cpu 
-    emb0 = emb0.cpu()
-    emb1 = emb1.cpu()
-
-    res = []
-    p0 = 0 # emb0 position
-    p1 = 0 # emb1
-    for i in range(max_len):
-        if order[i] == 0:
-            res.append(emb0[p0].numpy())
-            p0 += 1
-        else:
-            res.append(emb1[p1].numpy())
-            p1 += 1
-
-    max_cond_len=300
-    cond, _ = torch.split(last_condition, [cond_x*cond_y, max_cond_len-cond_x*cond_y], 0)
-    cond = list(cond.view(cond_x, cond_y).numpy())
-    last_ptr_list = last_ptr_list.int()
-    last_ptr_list = last_ptr_list.tolist()
-
-    gm = GflowNetEmbedding()
-    new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=res,
-                                                  embedding_conditions=cond, count_Ptr_results=last_ptr_list)
-    # sub_sch = record.as_measure_candidate().sch
-    # # record.workload is workload info
-    # sub_trace = sub_sch.trace
-    # sub_insts = sub_trace.insts
-    # sub_decisions = sub_trace.decisions
-    # # Must use with_decision() to set sub_trace
-    # for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-    #     sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
-
-    return (new_sub_insts, new_sub_decisions)
-
-
 
 
 # dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda
 # GFlowNet prefer 0~9 format avoid invalid format [1, 0, 1] + extra mask -- GFlowNet output [0.3, 0.5, ..., 0.1] with 10 position
 # 15*96 is 0~1 for tile (质因数分解) allowing [0, 1, 1] not one-hot format -- GFlowNet output [[0.3, 0.7], [0.2, 0.8], [0.4, 0.6]]
 class MLCGflowNetDataset(Dataset):
-    # TODO: change without_condition=False & determine condition len in future 
-    def __init__(self,all_files,without_condition=False, max_order_len = 15, max_cond_len=300):
+    # TODO: change without_condition=False & determine condition len in future
+    def __init__(self, all_files, without_condition=False, max_order_len=15, max_cond_len=300):
         self.all_files = all_files
         self.without_condition = without_condition
         self.max_cond_len = max_cond_len
         self.max_order_len = max_order_len
-    
+
     def __len__(self):
         return len(self.all_files)
-    
-    def __getitem__(self,idx):
+
+    def __getitem__(self, idx):
         file = self.all_files[idx]
         file = np.load(file)
-        record = file["record"]
-        record = record.tolist()
 
         decode = file["decode"]
 
@@ -248,33 +413,40 @@ class MLCGflowNetDataset(Dataset):
 
         last_ptr_list = file['last_ptr_list']
         run_secs = file['run_secs']
-            
+
         if self.without_condition:
             return decode, last_embedding, run_secs
         else:
-            padding = torch.zeros(self.max_cond_len - last_condition.shape[0]).to(last_condition.device)
-            last_condition = torch.cat([last_condition,padding], 0)
+            padding = torch.zeros(
+                self.max_cond_len - last_condition.shape[0]).to(last_condition.device)
+            last_condition = torch.cat([last_condition, padding], 0)
 
             padding0 = torch.zeros(self.max_order_len - order.shape[0])
             order = torch.cat([order, padding0], 0)
 
             return decode, order, last_embedding, run_secs, last_condition, last_ptr_list
-    
+
+
 # Load above GFlowNet Dataset for search, ret dataloader
 def gflownet_data_load(save_path,
                        without_condition=False,
                        num_workers=4,
                        batch_size=16,
-                       shuffle=True,
-                       pin_memory=False):
+                       shuffle=False,
+                       pin_memory=False,
+                       drop_last=True):
     import glob
+
     def search_all_files(work_dir):
-        npz_files = sorted(glob.glob(os.path.join(work_dir, "*.npz"), recursive=True))
+        npz_files = sorted(glob.glob(os.path.join(
+            work_dir, "*.npz"), recursive=True))
         return npz_files
-    
+
     all_files = search_all_files(save_path)
-    dataset = MLCGflowNetDataset(all_files,without_condition=without_condition)
+    dataset = MLCGflowNetDataset(
+        all_files, without_condition=without_condition)
     # A generative task without any validate dataset.
     # DataLoader speed up data loader
-    dataloader = DataLoader(dataset,batch_size=batch_size,num_workers=num_workers,shuffle=shuffle,pin_memory=pin_memory)
-    return dataloader
+    dataloader = DataLoader(dataset, batch_size=batch_size, drop_last=True,
+                            num_workers=num_workers, shuffle=shuffle, pin_memory=pin_memory)
+    return dataloader, len(dataset)

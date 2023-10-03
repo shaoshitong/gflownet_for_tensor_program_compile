@@ -2,11 +2,14 @@ import torch
 from tqdm import tqdm
 import wandb
 
-from src.gfn.gflownet import TBGFlowNet  # We use a GFlowNet with the Trajectory Balance (TB) loss
-from src.gfn.gym import HyperGrid, MetaScheduleEnv  # We use the hyper grid environment
+# We use a GFlowNet with the Trajectory Balance (TB) loss
+from src.gfn.gflownet import TBGFlowNet
+# We use the hyper grid environment
+from src.gfn.gym import HyperGrid, MetaScheduleEnv
 from src.gfn.modules import DiscretePolicyEstimator
 from src.gfn.samplers import Sampler
-from src.gfn.utils import NeuralNet  # NeuralNet is a simple multi-layer perceptron (MLP)
+# NeuralNet is a simple multi-layer perceptron (MLP)
+from src.gfn.utils import NeuralNet
 from src.gfn.mlc_dataset import *
 
 
@@ -23,42 +26,40 @@ import pickle
 from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
 
 
-
 # NOTE: score is runtime, val is variance, tau is temperature factor
 def normalize_score(score,
-                    _mean = 0.003680646535107316, 
-                    _val = 0.0012118761480652196,
-                    _min = 2.8831801089918256e-06,
-                    _max = 4.567233072666666,
-                    _tau = 1):
+                    _mean=0.003680646535107316,
+                    _val=0.0012118761480652196,
+                    _min=2.8831801089918256e-06,
+                    _max=4.567233072666666,
+                    _tau=1):
     score = (score - _mean) / (_val ** (1/2))
     return torch.log(torch.sigmoid(score / _tau))
-    
-if __name__ == "__main__":
 
+
+if __name__ == "__main__":
 
     from src.gfn.utils.edm_model import mlp_ebm
     # define states len & action len
     state_len = 15 * 1 + 15 * 96
-    action_len = 15 * 10 + 15 * 96 * 2 + 1 # add the terminal state
+    action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path= "/root/kongdehao/model/tlp/tlp_model_73.pth"
+    tlp_path = "/root/kongdehao/model/median_tlp/save_model_v1/tlp_model_14.pkl"
     device = "cuda"
-    cost_model = torch.load(tlp_path, map_location=device)
+    with open(tlp_path, 'rb') as f:
+        cost_model = pickle.load(f)
+    cost_model.to(device)
 
-    # with open(tlp_path, 'rb') as f:
-    #     # print("$$$$$$$$$$$$$$$$$$$$$$$$$Open tlp model")
-    #     cost_model = pickle.load(f)  
-    # cost_model.to(device)
-    
+    # cost_model = torch.load(tlp_path, map_location=device)
 
     # # NOTE: fake cost model for test
-    edm_model = mlp_ebm(state_len,256,1).cuda() # Cost Model as discriminator
+    # Cost Model as discriminator
+    edm_model = mlp_ebm(state_len, 256, 1).cuda()
     cost_model = edm_model
     # TODO: input TLP in energy, but we need align format
     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
     # alpha \in [1, 500]
-    env = MetaScheduleEnv(energy=cost_model, alpha=500, device_str="cuda")
+    env = MetaScheduleEnv(energy=cost_model, alpha=500, device_str=device)
 
     # 2 - We define the needed modules (neural networks)
     # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
@@ -69,25 +70,32 @@ if __name__ == "__main__":
     module_PB = NeuralNet(
         input_dim=env.preprocessor.output_dim,
         output_dim=env.n_actions - 1,
-        torso=module_PF.torso  # We share all the parameters of P_F and P_B, except for the last layer
+        # We share all the parameters of P_F and P_B, except for the last layer
+        torso=module_PF.torso
     )
 
     # 3 - We define the estimators
 
-    pf_estimator = DiscretePolicyEstimator(module_PF, env.n_actions, is_backward=False, preprocessor=env.preprocessor)
-    pb_estimator = DiscretePolicyEstimator(module_PB, env.n_actions, is_backward=True, preprocessor=env.preprocessor)
+    pf_estimator = DiscretePolicyEstimator(
+        module_PF, env.n_actions, is_backward=False, preprocessor=env.preprocessor)
+    pb_estimator = DiscretePolicyEstimator(
+        module_PB, env.n_actions, is_backward=True, preprocessor=env.preprocessor)
 
     # 4 - We define the GFlowNet
-    gfn = TBGFlowNet(init_logZ=0., pf=pf_estimator, pb=pb_estimator)  # We initialize logZ to 0
+    gfn = TBGFlowNet(init_logZ=0., pf=pf_estimator,
+                     pb=pb_estimator)  # We initialize logZ to 0
 
     # 5 - We define the sampler and the optimizer
 
-    f_sampler = Sampler(estimator=pf_estimator)  # We use an on-policy sampler, based on the forward policy
-    
-    b_sampler = Sampler(estimator=pb_estimator)  # We also need a backward policy sampler.
+    # We use an on-policy sampler, based on the forward policy
+    f_sampler = Sampler(estimator=pf_estimator)
+
+    # We also need a backward policy sampler.
+    b_sampler = Sampler(estimator=pb_estimator)
 
     # Policy parameters have their own LR.
-    non_logz_params = [v for k, v in dict(gfn.named_parameters()).items() if k != "logZ"]
+    non_logz_params = [v for k, v in dict(
+        gfn.named_parameters()).items() if k != "logZ"]
     optimizer = torch.optim.Adam(non_logz_params, lr=1e-3)
 
     # Log Z gets dedicated learning rate (typically higher).
@@ -96,95 +104,116 @@ if __name__ == "__main__":
     # optimizer.add_param_group({"params": edm_model.parameters(), "lr": 1e-3})
 
     # 6 - We train the GFlowNet for 1000 iterations, with 16 trajectories per iteration
-    
+
     # 7 - Add the Meta-Schedule dataset
-    import os,sys
+    import os
+    import sys
     mount_path = "/root"
-    root = os.path.join(mount_path,"share/dataset/gflownet_dataset0")
+    root = os.path.join(mount_path, "share/dataset/gflownet_dataset0")
 
     # ValueError: Object arrays cannot be loaded when allow_pickle=False
     # save np.load
     np_load_old = np.load
     # modify the default parameters of np.load
-    np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
+    np.load = lambda *a, **k: np_load_old(*a, allow_pickle=True, **k)
 
-    without_condition = False
-    dataloader = gflownet_data_load(root,without_condition=without_condition, num_workers=4,batch_size=16)
-    
-    train_iter  = iter(dataloader)
-
+    record_path = "/root/share/dataset/tlp_dataset0"
+    databases = record_data_load(record_path)
+    print("Successful load all record database")
+    bs = 16
+    dataloader, data_num = gflownet_data_load(
+        root, without_condition=False, num_workers=4, batch_size=bs)
+    # record_iter = iter(record_dataloader)
+    train_iter = iter(dataloader)
+    info_path = "/root/share/dataset/decode_info"
     # epoch = 5000
     epoch = 5
+    target = "cuda"
 
-    pbar = tqdm(range(0, epoch))
-    for i in (pbar):
+    for s in (tqdm(range(0, epoch))):
         cond = None
         ptr = None
         # record, decode, order, last_embedding, run_secs, last_condition, last_ptr_list
 
-        if without_condition:
-            try:
-                decode, order, x, score = next(train_iter)
-            except:
-                train_iter = iter(dataloader)
-                decode, order, x, score = next(train_iter)
-        else:
-            try:
-                decode, order, x, score, cond, ptr = next(train_iter)
-            except:
-                train_iter = iter(dataloader)
-                decode, order, x, score, cond, ptr = next(train_iter)
-        
+        try:
+            decode, order, x, score, cond, ptr = next(train_iter)
+        except:
+            train_iter = iter(dataloader)
+            decode, order, x, score, cond, ptr = next(train_iter)
+
+        begin = (s*bs) % data_num
+        end = (s*bs+bs) % data_num
+        np.savez(os.path.join(info_path, f'info{s}.npz'), x=x[0], database=databases[begin+0],
+                 decode=decode[0], order=order[0],  cond=cond[0], ptr=ptr[0], target=target)
+
         x = x.cuda(non_blocking=True).long()
         # Convert into [batch, -1]
-        x = x.view(x.shape[0],-1)
+        x = x.view(x.shape[0], -1)
         score = normalize_score(score.cuda(non_blocking=True))
         # create env state
         states = env.States(x)
 
-        res = []
-        print("decode shape = ", decode.shape)
-        
-        for i in range(x.shape[0]):
-            res.append(restore_embedding(decode[i], order[i], states.tensor[i], cond[i], ptr[i]))
+        info = (states.tensor, databases[begin:end],
+                decode, order, cond, ptr, target)
+        features = restore_embedding(info)
+        print("Successful!")
+        # print("Successful generate new instruction & decisions")
 
+        # # database made up of records, including candidates info
+        # records = database.get_all_tuning_records()
+        # record = records[0]
+        # candidate = record.as_measure_candidate()
+        # # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
+        # context = TuneContext(mod=record.workload.mod, target=Target(target))
 
-        # # NOTE: step 1 -- sample trajectory
-        # f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
-        # b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
-        # # TODO: real_y that for training fake cost model -- discriminator
-        # # real_y = edm_model(x.float())
+        # sub_sch = candidate.sch
+        # # trace include instructions & decisions
+        # sub_trace = sub_sch.trace
+        # # Must use with_decision() to set sub_trace
+        # for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
+        #     sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
+        # from tvm.meta_schedule.database.database import TuningRecord
 
-        # # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
-        # # fake_y = edm_model(fake_x)
-        # # edm_loss = ((real_y - score) ** 2).mean()
-        # optimizer.zero_grad()
-        # # cost model real work place 
-        # # NOTE: step 2 -- compute loss
-        # f_loss = gfn.loss(env, f_trajectories)
-        # b_loss = gfn.loss(env, b_trajectories)
-        # # TODO: remove edm_loss 
-        # loss = b_loss + f_loss # + edm_loss
-        # loss.backward()
-        # optimizer.step()
-        
-        # if i % 1 == 0:
-        #     reward = torch.exp(f_trajectories.log_rewards).mean().item()
-        #     pbar.set_postfix({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})  
-        #     # log metrics to wandb
-        #     # wandb.log({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})
-        # if i & 5 == 0:      
-        #     checkpoint = {"gfn":gfn.state_dict()}
-        #     torch.save(checkpoint,f"gflownet_checkpoint_{i}.pth")
-        #     os.system(f"rm -rf gflownet_checkpoint_{i-25}.pth")
+        # database.commit_tuning_record(TuningRecord(
+        #     sub_trace,
+        #     record.workload,
+        #     record.run_secs,
+        #     Target(target),
+        #     candidate.args_info))
+
+    #     # NOTE: step 1 -- sample trajectory
+    #     f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
+    #     b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
+    #     # TODO: real_y that for training fake cost model -- discriminator
+    #     # real_y = edm_model(x.float())
+
+    #     # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
+    #     # fake_y = edm_model(fake_x)
+    #     # edm_loss = ((real_y - score) ** 2).mean()
+    #     optimizer.zero_grad()
+    #     # cost model real work place
+    #     # NOTE: step 2 -- compute loss
+    #     f_loss = gfn.loss(env, f_trajectories)
+    #     b_loss = gfn.loss(env, b_trajectories)
+    #     # TODO: remove edm_loss
+    #     loss = b_loss + f_loss # + edm_loss
+    #     loss.backward()
+    #     optimizer.step()
+
+    #     if i % 1 == 0:
+    #         reward = torch.exp(f_trajectories.log_rewards).mean().item()
+    #         pbar.set_postfix({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})
+    #         # log metrics to wandb
+    #         # wandb.log({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})
+    #     if i & 5 == 0:
+    #         checkpoint = {"gfn":gfn.state_dict()}
+    #         torch.save(checkpoint,f"gflownet_checkpoint_{i}.pth")
+    #         os.system(f"rm -rf gflownet_checkpoint_{i-25}.pth")
 
     # save_model_path = "%s/tlp_model_%d.pkl" %(args.save_model_path, epoch)
     # with open(save_model_path, 'wb') as f:
     #     pickle.dump(net.cpu(), f)
-    # net.to(device)   
-            
-            
+    # net.to(device)
 
-    
     # restore np.load for future normal usage
     np.load = np_load_old

@@ -439,7 +439,7 @@ class State:
         
         return results
     
-        # NOTE: important!!! -- adapt to GFlowNet
+    # NOTE: important!!! -- adapt to GFlowNet
     def GenerateMeasureCandidates0(self)->Optional[List[MeasureCandidate]]:
         # check if tray max trials, not over max trials
         if(self.st >= self.max_trials):

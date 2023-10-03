@@ -394,51 +394,6 @@ class MetaScheduleEnv(DiscreteEnv):
         )
         
         return states.tensor
-    
-
-    def extract_features(
-        context: TuneContext,
-        candidates: List[MeasureCandidate],
-        results: Optional[List[RunnerResult]] = None,
-        extractor: Optional[FeatureExtractor] = None,
-    ):
-        """Extract feature vectors and compute mean costs.
-
-        Parameters
-        ----------
-        context: TuneContext
-            The tuning context.
-        candidates: List[MeasureCandidate]
-            The measure candidates.
-        results: Optional[List[RunnerResult]]
-            The measured results, can be None if used in prediction.
-        extractor: Optional[FeatureExtractor]
-            The feature extractor.
-
-        Returns
-        -------
-        new_features: List[np.ndarray]
-            The extracted features.
-        new_mean_costs: np.ndarray
-            The mean costs.
-        """
-        extractor = extractor or PerStoreFeature(extract_workload=True)
-
-        def _feature(feature: NDArray) -> np.ndarray:
-            return feature.numpy().astype("float32")
-
-        def _mean_cost(res: RunnerResult) -> float:
-            if not res.run_secs:
-                return 1e10
-            return float(np.median([float(s) for s in res.run_secs]))
-
-        new_features = [_feature(x) for x in extractor.extract_from(context, candidates)]
-        new_mean_costs = (
-            np.array([_mean_cost(x) for x in results]).astype("float32")
-            if results is not None
-            else None
-        )
-        return new_features, new_mean_costs
 
     def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
         raw_states = final_states.tensor
@@ -448,69 +403,25 @@ class MetaScheduleEnv(DiscreteEnv):
         # NOTE: Add minus for low GPU latency
         return -self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
 
-    # NOTE: add tlp 
-    def log_reward0(self, final_states: DiscreteStates) -> TT["batch_shape"]:
-        r'''
-        @torch.no_grad()
-        def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
-            self.model.eval()
-            features, _ = extract_features(context, candidates)
-            # NOTE: This is for speed up predict!
-            val_dataloader = SegmentDataloder_new(
-                features, shuffle=False
-            )
-            pred_results = []
-            for batch_data,_ in val_dataloader:
-                batch_data = batch_data.to(self.device)
-                outputs = self.model(batch_data)
-                pred_results.extend(outputs.detach().cpu().numpy())
-            return pred_results
-        '''
-        import tvm
-        from tvm import meta_schedule as ms
-        from tvm.ir import load_json
-        from tvm.target import Target
+
+    # NOTE: import tlp cost model
+    def log_reward0(self, final_states: DiscreteStates, info) -> TT["batch_shape"]:
+
+        from mlc_dataset.mlc_dataset import restore_embedding
         raw_states = final_states.tensor
-        canonical = raw_states
+        x = raw_states
         # print("canonical shape = ", canonical.shape) # torch.Size([16, 1455])
         # energy is cost model -- tlp
         # NOTE: Add minus for low GPU latency
         self.energy.eval()
-        database = ms.database.JSONDatabase(
-            path_workload=workload_path,
-            path_tuning_record=candidate_path,
-        )
-        sample_init_population = tvm.get_global_func(
-            "meta_schedule.SearchStrategyEvolutionarySearchSampleInitPopulation"
-        )
-        evolve_with_cost_model = tvm.get_global_func(
-            "meta_schedule.SearchStrategyEvolutionarySearchEvolveWithCostModel"
-        )
-        strategy = ms.search_strategy.EvolutionarySearch(init_measured_ratio=0.0)
-        target = Target("nvidia/nvidia-a100")
-        context = ms.TuneContext(
-            mod=task,
-            target=target,
-            space_generator="post-order-apply",
-            search_strategy=strategy,
-        )
-        # context.initialize()
-        context.pre_tuning(
-            design_spaces=context.generate_design_space(),
-            database=database,
-            cost_model=ms.cost_model.RandomModel(),  # type: ignore
-        )
-        features, _ = self.extract_features(context, candidates)
-        val_dataloader = SegmentDataloder_new(
-            features, shuffle=False
-        )
-        pred_results = []
-        for batch_data,_ in val_dataloader:
-            batch_data = batch_data.to(self.device)
-            outputs = self.energy(batch_data)
-            pred_results.extend(outputs.detach().cpu().numpy())
 
-        return -self.alpha * self.energy(canonical.float()).clone().detach().view(-1)
+        for i in range(x.shape[0]):
+
+            features = restore_embedding(info)
+            res.append(self.energy(features))
+        res = torch.from_numpy(np.array(res))
+
+        return -self.alpha * res.clone().detach().view(-1)
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
     #     """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""
