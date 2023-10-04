@@ -45,7 +45,8 @@ if __name__ == "__main__":
     action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
     tlp_path = "/root/kongdehao/model/median_tlp/save_model_v1/tlp_model_14.pkl"
-    device = "cuda"
+    # tlp_model on device "cuda:7"
+    device = "cuda:7"
     with open(tlp_path, 'rb') as f:
         cost_model = pickle.load(f)
     cost_model.to(device)
@@ -54,8 +55,8 @@ if __name__ == "__main__":
 
     # # NOTE: fake cost model for test
     # Cost Model as discriminator
-    edm_model = mlp_ebm(state_len, 256, 1).cuda()
-    cost_model = edm_model
+    # edm_model = mlp_ebm(state_len, 256, 1).cuda()
+    # cost_model = edm_model
     # TODO: input TLP in energy, but we need align format
     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
     # alpha \in [1, 500]

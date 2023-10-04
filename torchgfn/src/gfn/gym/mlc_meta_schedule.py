@@ -446,7 +446,7 @@ class MetaScheduleEnv(DiscreteEnv):
         #     features = restore_embedding(info)
         features = torch.from_numpy(np.array(features)).to(self.device)
         res = self.energy(features)
-        res = torch.from_numpy(np.array(res))
+        # res = torch.from_numpy(np.array(res.cpu()))
 
         return -self.alpha * res.clone().detach().view(-1)
 
