@@ -15,7 +15,7 @@ from tvm.meta_schedule import TuneContext, FeatureExtractor,MeasureCandidate
 from tvm.target import Target
 from tvm.meta_schedule.feature_extractor import PerStoreFeature
 from tvm.runtime import NDArray
-from tvm.meta_schedule.utils import  shash2hex
+from tvm.meta_schedule.utils import shash2hex
 import multiprocessing 
 from multiprocessing.pool import ThreadPool
 

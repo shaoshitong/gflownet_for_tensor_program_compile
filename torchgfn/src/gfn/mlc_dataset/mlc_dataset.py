@@ -73,23 +73,64 @@ def tlp_data_save(data_path, save_path):
             count_ptr += 1
 
 
-# def worker0(workload_file):
+def worker1(workload_path):
+
+    candidate_path = workload_path.replace("workloads", "candidates")
+
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
+    # print("In each worker, ", len(database.get_all_tuning_records()))
+
+    return database.get_all_tuning_records()
 
 
-#     # print(len(database.get_all_tuning_records()))
+def worker0(workload_path):
 
-#     return database
+    candidate_path = workload_path.replace("workloads", "candidates")
+
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
+    # print("In each worker, ", len(database.get_all_tuning_records()))
+
+    return database.copy()
 
 
-# def record_data_load(data_path):
+def record_data_load(record_path):
 
-#     pool = multiprocessing.Pool(112)
-#     # pool = ThreadPool()
+    pool = multiprocessing.Pool(112)
+    # pool = ThreadPool()
+    workload_paths = sorted(
+        glob.glob(os.path.join(record_path, f"*workloads_*.json"), recursive=True))
+
+    databases = pool.map(worker1, workload_paths)
+
+    print(len(databases))
+    for i in range(20):
+        records = databases[i]
+        print(len(records))
+
+    return databases
 
 
-#     databases = pool.map(worker0, workload_paths)
+def record_data_load0(record_path):
 
-#     return databases
+    from joblib import Parallel, delayed
+
+    # Parallelize the for loop using Joblib
+
+    workload_paths = sorted(
+        glob.glob(os.path.join(record_path, f"*workloads_*.json"), recursive=True))
+
+    databases = Parallel(n_jobs=112)(delayed(worker0)(i)
+                                     for i in workload_paths)
+    print("Finish load!")
+
+    print(len(databases))
+    for i in range(20):
+        records = databases[i].get_all_tuning_records()
+        print("len of records = ", len(records))
+
+    return databases
 
 
 def extract_features(
@@ -127,15 +168,15 @@ def restore_embedding(decode_info):
     import torch.nn.functional as Fun
     MAX_NUMBER = 15
     # (bs, ...)
-    xs, databases, decodes, orders, conds, ptrs, target = decode_info
+    xs, databases_path, decodes, orders, conds, ptrs, target = decode_info
     bs = xs.shape[0]
     contexts, candidates = [], []
     print("len of xs", len(xs))
     # TODO:.. print(len)
 
     for i in range(bs):
-        x, database, decode, order, cond, ptr = \
-            xs[i], databases[i], decodes[i], orders[i], conds[i], ptrs[i]
+        x, database_path, decode, order, cond, ptr = \
+            xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
 
         res_x, res_y, cond_x, cond_y, max_len, emb0_x, emb1_x = decode
         ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
@@ -167,8 +208,12 @@ def restore_embedding(decode_info):
         cond, _ = torch.split(
             cond, [cond_x*cond_y, max_cond_len-cond_x*cond_y], 0)
         cond = list(cond.view(cond_x, cond_y).numpy())
-        ptr = ptr.int()
-        ptr = ptr.tolist()
+        if isinstance(ptr, np.ndarray):
+            ptr = ptr.astype(int)
+            ptr = ptr.tolist()
+        else:
+            ptr = ptr.int()
+            ptr = ptr.tolist()
 
         gm = GflowNetEmbedding()
         new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=res,
@@ -176,10 +221,17 @@ def restore_embedding(decode_info):
         # print("Successful generate new instruction & decisions")
 
         # database made up of records, including candidates info
+
+        workload_path, candidate_path = database_path
+        # NOTE: cost 1ms -- not return database, otherwise records is empty list
+        database = ms.database.JSONDatabase(path_workload=workload_path,
+                                            path_tuning_record=candidate_path)
+
         records = database.get_all_tuning_records()
         record = records[0]
         candidate = record.as_measure_candidate()
         # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
+        # NOTE: cost 10ms
         context = TuneContext(mod=record.workload.mod, target=Target(target))
 
         sub_sch = candidate.sch
@@ -355,7 +407,7 @@ def gflownet_data_save(data_path, save_path):
             # print("not padding condition shape: ", last_condition.shape) # torch.Size([72])
             # print("last ptr list shape: ", last_ptr_list.shape) # torch.Size([3])
             # NOTE: We define attr in dataset: last_embedding, last_condition, last_ptr_lis, run_secs
-            np.savez(os.path.join(save_path, f'mlc_{count_ptr}.npz'),  decode=decode,
+            np.savez(os.path.join(save_path, f'mlc_{count_ptr}.npz'), decode=decode,
                      order=order, last_embedding=last_embedding, last_condition=last_condition,
                      last_ptr_list=last_ptr_list, run_secs=min_cost)
             print(f"Successfully Save File mlc_{count_ptr}.npz")
@@ -365,16 +417,46 @@ def gflownet_data_save(data_path, save_path):
     print("Max order len = ", max_order_len)
 
 
+def formatter(file, max_order_len=15, max_cond_len=300):
+    decode = file["decode"]
+
+    order = file["order"]
+    order = torch.from_numpy(order)
+
+    last_embedding = file['last_embedding']
+    last_condition = file['last_condition']
+    last_condition = torch.from_numpy(last_condition)
+
+    last_ptr_list = file['last_ptr_list']
+    run_secs = file['run_secs']
+    if last_condition.ndim > 1:
+        n, m = last_condition.shape
+        padding = torch.zeros((
+            n, max_cond_len - m)).to(last_condition.device)
+        last_condition = torch.cat([last_condition, padding], 1)
+        n1, m1 = order.shape
+        padding0 = torch.zeros((n1, max_order_len - m1))
+        order = torch.cat([order, padding0], 1)
+    else:
+        n = last_condition.shape[0]
+        padding = torch.zeros(
+            max_cond_len - n).to(last_condition.device)
+        last_condition = torch.cat([last_condition, padding], 0)
+        n1 = order.shape[0]
+        padding0 = torch.zeros(max_order_len - n1)
+        order = torch.cat([order, padding0], 0)
+    return decode, order, last_embedding, run_secs, last_condition, last_ptr_list
+
 # dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda
 # GFlowNet prefer 0~9 format avoid invalid format [1, 0, 1] + extra mask -- GFlowNet output [0.3, 0.5, ..., 0.1] with 10 position
 # 15*96 is 0~1 for tile (质因数分解) allowing [0, 1, 1] not one-hot format -- GFlowNet output [[0.3, 0.7], [0.2, 0.8], [0.4, 0.6]]
+
+
 class MLCGflowNetDataset(Dataset):
     # TODO: change without_condition=False & determine condition len in future
-    def __init__(self, all_files, without_condition=False, max_order_len=15, max_cond_len=300):
+    def __init__(self, all_files, without_condition=False, ):
         self.all_files = all_files
         self.without_condition = without_condition
-        self.max_cond_len = max_cond_len
-        self.max_order_len = max_order_len
 
     def __len__(self):
         return len(self.all_files)
@@ -382,30 +464,7 @@ class MLCGflowNetDataset(Dataset):
     def __getitem__(self, idx):
         file = self.all_files[idx]
         file = np.load(file)
-
-        decode = file["decode"]
-
-        order = file["order"]
-        order = torch.from_numpy(order)
-
-        last_embedding = file['last_embedding']
-        last_condition = file['last_condition']
-        last_condition = torch.from_numpy(last_condition)
-
-        last_ptr_list = file['last_ptr_list']
-        run_secs = file['run_secs']
-
-        if self.without_condition:
-            return decode, last_embedding, run_secs
-        else:
-            padding = torch.zeros(
-                self.max_cond_len - last_condition.shape[0]).to(last_condition.device)
-            last_condition = torch.cat([last_condition, padding], 0)
-
-            padding0 = torch.zeros(self.max_order_len - order.shape[0])
-            order = torch.cat([order, padding0], 0)
-
-            return decode, order, last_embedding, run_secs, last_condition, last_ptr_list
+        return formatter(file)
 
 
 # Load above GFlowNet Dataset for search, ret dataloader

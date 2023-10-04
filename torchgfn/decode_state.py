@@ -120,31 +120,41 @@ if __name__ == "__main__":
     record_path = "/root/share/dataset/tlp_dataset0"
     # databases = record_data_load(record_path)
     # print(f"Successful load all record database size = {len(databases)}")
-    bs = 512
+    # bs = 512
+    bs = 16
     dataloader, data_num = gflownet_data_load(
         root, without_condition=False, num_workers=4, batch_size=bs)
     # record_iter = iter(record_dataloader)
     train_iter = iter(dataloader)
     info_path = "/root/share/dataset/decode_info"
+    gfn_path = "/root/kongdehao/model/gfn"
     # epoch = 5000
-    epoch = 5
+    epoch = 20
     target = "cuda"
 
-    for s in (tqdm(range(0, epoch))):
+    pbar = tqdm(range(0, epoch))
+
+    for ep in (pbar):
         cond = None
         ptr = None
         # record, decode, order, last_embedding, run_secs, last_condition, last_ptr_list
-        for step, (decode, order, x, score, cond, ptr) in enumerate(train_iter):
-            # try:
-            #     decode, order, x, score, cond, ptr = next(train_iter)
-            # except:
-            #     train_iter = iter(dataloader)
-            #     decode, order, x, score, cond, ptr = next(train_iter)
+        # for step, (decode, order, x, score, cond, ptr) in enumerate(train_iter):
+        if True:
+            step = ep
+            try:
+                decode, order, x, score, cond, ptr = next(train_iter)
+            except:
+                train_iter = iter(dataloader)
+                decode, order, x, score, cond, ptr = next(train_iter)
+
             # data_num: 3191
             begin = (step*bs) % data_num
             end = (step*bs+bs) % data_num
-            # np.savez(os.path.join(info_path, f'info{s}.npz'), x=x[0], database=databases[begin+0],
+            # np.savez(os.path.join(info_path, f'info{step}.npz'), x=x[0], database=databases[begin+0],
             #          decode=decode[0], order=order[0],  cond=cond[0], ptr=ptr[0], target=target)
+            # np.savez(os.path.join(info_path, f'info{step}.npz'), decode=decode,
+            #          order=order, last_embedding=x, last_condition=cond,
+            #          last_ptr_list=ptr, run_secs=score)
 
             x = x.cuda(non_blocking=True).long()
             # Convert into [batch, -1]
@@ -152,77 +162,84 @@ if __name__ == "__main__":
             score = normalize_score(score.cuda(non_blocking=True))
             # create env state
             states = env.States(x)
-            
-            workload_paths = sorted(
-                [os.path.join(record_path, f"workloads_{step*bs+i}.json") for i in range(bs)])
+
+            workload_paths = [os.path.join(
+                record_path, f"workloads_{i}.json") for i in range(begin, end)]
             candidate_paths = [workload_path.replace(
                 "workloads", "candidates") for workload_path in workload_paths]
             num = len(candidate_paths)
+            # NOTE: not use sorted()
+            databases_path = [(workload_paths[i], candidate_paths[i])
+                              for i in range(num)]
+            # databases = [ms.database.JSONDatabase(
+            #     path_workload=workload_paths[i], path_tuning_record=candidate_paths[i]) for i in range(num)]
 
-            databases = [ms.database.JSONDatabase(
-                path_workload=workload_paths[i], path_tuning_record=candidate_paths[i]) for i in range(num)]
-            info = (states.tensor, databases,
-                    decode, order, cond, ptr, target)
-            features = restore_embedding(info)
-            print(f"Successful from {step} to {step+bs}!")
+            npz_file0 = sorted(glob.glob(os.path.join(
+                info_path, f"info*.npz"), recursive=True))
 
-        # print("Successful generate new instruction & decisions")
+            workload_paths0 = [os.path.join(
+                info_path, f"workloads_{i}.json") for i in range(0, bs)]
 
-        # # database made up of records, including candidates info
-        # records = database.get_all_tuning_records()
-        # record = records[0]
-        # candidate = record.as_measure_candidate()
-        # # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
-        # context = TuneContext(mod=record.workload.mod, target=Target(target))
+            candidate_paths0 = [workload_path0.replace(
+                "workloads", "candidates") for workload_path0 in workload_paths0]
+            num0 = len(workload_paths0)
+            databases_path0 = [(workload_paths0[i], candidate_paths0[i])
+                               for i in range(num0)]
+            # databases0 = [ms.database.JSONDatabase(
+            #     path_workload=workload_path0[i], path_tuning_record=candidate_path0[i]) for i in range(num0)]
 
-        # sub_sch = candidate.sch
-        # # trace include instructions & decisions
-        # sub_trace = sub_sch.trace
-        # # Must use with_decision() to set sub_trace
-        # for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-        #     sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
-        # from tvm.meta_schedule.database.database import TuningRecord
+            file0 = npz_file0[0]
+            file0 = np.load(file0)
 
-        # database.commit_tuning_record(TuningRecord(
-        #     sub_trace,
-        #     record.workload,
-        #     record.run_secs,
-        #     Target(target),
-        #     candidate.args_info))
+            info0 = formatter(file0)
+            decode0, order0, x0, run_secs0, cond0, ptr0 = info0
+            f_info = (databases_path0, decode0, order0, cond0, ptr0, target)
+            b_info = (databases_path, decode, order, cond, ptr, target)
 
-        # NOTE: step 1 -- sample trajectory
-        # f_trajectories = f_sampler.sample_trajectories(env=env, n_trajectories=16)
-        # b_trajectories = b_sampler.sample_trajectories(env=env, n_trajectories=16,states=states)
-    #     # TODO: real_y that for training fake cost model -- discriminator
-    #     # real_y = edm_model(x.float())
+            # f_infos = (True, f_info)
+            # b_infos = (False, b_info)
+            # features = restore_embedding(info)
+            # print(f"Successful from {step} to {step+bs}!")
 
-    #     # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
-    #     # fake_y = edm_model(fake_x)
-    #     # edm_loss = ((real_y - score) ** 2).mean()
-    #     optimizer.zero_grad()
-    #     # cost model real work place
-    #     # NOTE: step 2 -- compute loss
-    #     f_loss = gfn.loss(env, f_trajectories)
-    #     b_loss = gfn.loss(env, b_trajectories)
-    #     # TODO: remove edm_loss
-    #     loss = b_loss + f_loss # + edm_loss
-    #     loss.backward()
-    #     optimizer.step()
+            # NOTE: step 1 -- sample trajectory
+            f_trajectories = f_sampler.sample_trajectories(
+                env=env, n_trajectories=16, info=f_info)
+            b_trajectories = b_sampler.sample_trajectories(
+                env=env, n_trajectories=16, states=states, info=b_info)
+            # TODO: real_y that for training fake cost model -- discriminator
+            # real_y = edm_model(x.float())
 
-    #     if i % 1 == 0:
-    #         reward = torch.exp(f_trajectories.log_rewards).mean().item()
-    #         pbar.set_postfix({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})
-    #         # log metrics to wandb
-    #         # wandb.log({"b_loss": b_loss.item(),"f_loss": f_loss.item(), "reward":reward})
-    #     if i & 5 == 0:
-    #         checkpoint = {"gfn":gfn.state_dict()}
-    #         torch.save(checkpoint,f"gflownet_checkpoint_{i}.pth")
-    #         os.system(f"rm -rf gflownet_checkpoint_{i-25}.pth")
+            # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
+            # fake_y = edm_model(fake_x)
+            # edm_loss = ((real_y - score) ** 2).mean()
+            optimizer.zero_grad()
+            # cost model real work place
+            # NOTE: step 2 -- compute loss
+            f_loss = gfn.loss(env, f_trajectories)
+            b_loss = gfn.loss(env, b_trajectories)
+            # TODO: remove edm_loss
+            loss = b_loss + f_loss  # + edm_loss
+            loss.backward()
+            optimizer.step()
 
-    # save_model_path = "%s/tlp_model_%d.pkl" %(args.save_model_path, epoch)
-    # with open(save_model_path, 'wb') as f:
-    #     pickle.dump(net.cpu(), f)
-    # net.to(device)
+            if ep % 1 == 0:
+                reward = torch.exp(f_trajectories.log_rewards).mean().item()
+                pbar.set_postfix(
+                    {"b_loss": b_loss.item(), "f_loss": f_loss.item(), "reward": reward})
+                # log metrics to wandb
+                wandb.log({"b_loss": b_loss.item(),
+                          "f_loss": f_loss.item(), "reward": reward})
+            if ep & 5 == 0:
+                # checkpoint = {"gfn": gfn.state_dict()}
+                dir = os.path.join(gfn_path, f"gflownet_{ep}.pth")
+                last_dir = os.path.join(gfn_path, f"gflownet_{ep-25}.pth")
+                torch.save(gfn, dir)
+                os.system(f"rm -rf {last_dir}")
+
+        # save_model_path = "%s/tlp_model_%d.pkl" % (args.save_model_path, epoch)
+        # with open(save_model_path, 'wb') as f:
+        #     pickle.dump(net.cpu(), f)
+        # net.to(device)
 
     # restore np.load for future normal usage
     np.load = np_load_old

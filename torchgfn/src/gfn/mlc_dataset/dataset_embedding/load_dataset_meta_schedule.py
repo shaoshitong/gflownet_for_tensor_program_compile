@@ -52,12 +52,11 @@ def search_all_files(work_dir):
 def load_all_files(work_dir):
     results = search_all_files(work_dir)
     databases = []
-    pool = multiprocessing.Pool(112)
+    # pool = multiprocessing.Pool(112)
 
     for result in results:
         workload_path, candidate_path = result
-        database = pool.apply_async(
-            load_workload_and_candidate, args=(workload_path, candidate_path))
+        database = load_workload_and_candidate(workload_path, candidate_path)
         # database = load_workload_and_candidate(*result)
         databases.append(database)
 

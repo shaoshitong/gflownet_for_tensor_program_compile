@@ -5,9 +5,9 @@ import torch.nn as nn
 from torch.distributions import Categorical, Distribution
 from torchtyping import TensorType as TT
 
-from gfn.preprocessors import IdentityPreprocessor, Preprocessor
-from gfn.states import DiscreteStates, States
-from gfn.utils.distributions import UnsqueezedCategorical
+from .preprocessors import IdentityPreprocessor, Preprocessor
+from .states import DiscreteStates, States
+from .utils.distributions import UnsqueezedCategorical
 
 
 class GFNModule(ABC, nn.Module):

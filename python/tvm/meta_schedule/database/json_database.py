@@ -78,7 +78,8 @@ class JSONDatabase(Database):
             if path_workload is None:
                 path_workload = osp.join(work_dir, "database_workload.json")
             if path_tuning_record is None:
-                path_tuning_record = osp.join(work_dir, "database_tuning_record.json")
+                path_tuning_record = osp.join(
+                    work_dir, "database_tuning_record.json")
         if path_workload is None:
             raise ValueError("`path_workload` is not specified.")
         if path_tuning_record is None:

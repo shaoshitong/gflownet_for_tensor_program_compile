@@ -413,7 +413,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
         return states.tensor
 
-    def log_reward(self, final_states: DiscreteStates) -> TT["batch_shape"]:
+    def log_reward0(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape"]:
         raw_states = final_states.tensor
         canonical = raw_states
         # print("canonical shape = ", canonical.shape)
@@ -423,7 +423,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
     # NOTE: import tlp cost model
 
-    def log_reward0(self, final_states: DiscreteStates, info) -> TT["batch_shape"]:
+    def log_reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape"]:
 
         from mlc_dataset.mlc_dataset import restore_embedding
         raw_states = final_states.tensor
@@ -432,8 +432,19 @@ class MetaScheduleEnv(DiscreteEnv):
         # energy is cost model -- tlp
         # NOTE: Add minus for low GPU latency
         self.energy.eval()
+        # is_forward, info = infos
 
+        if x.shape[0] == 0:
+            return 0
+
+        info = tuple([x])
+
+        info += infos
+        # if is_forward:
         features = restore_embedding(info)
+        # else:
+        #     features = restore_embedding(info)
+        features = torch.from_numpy(np.array(features)).to(self.device)
         res = self.energy(features)
         res = torch.from_numpy(np.array(res))
 

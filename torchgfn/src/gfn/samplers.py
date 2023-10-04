@@ -3,11 +3,11 @@ from typing import List, Optional, Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.containers import Trajectories
-from gfn.env import Env
-from gfn.modules import GFNModule
-from gfn.states import States
+from .actions import Actions
+from .containers import Trajectories
+from .env import Env
+from .modules import GFNModule
+from .states import States
 
 
 class Sampler:
@@ -57,7 +57,8 @@ class Sampler:
             actions = dist.sample()
         log_probs = dist.log_prob(actions)
         if torch.any(torch.isinf(log_probs)):
-            raise RuntimeError("Log probabilities are inf. This should not happen.")
+            raise RuntimeError(
+                "Log probabilities are inf. This should not happen.")
 
         return env.Actions(actions), log_probs
 
@@ -66,6 +67,7 @@ class Sampler:
         env: Env,
         states: Optional[States] = None,
         n_trajectories: Optional[int] = None,
+        info=None,
     ) -> Trajectories:
         """Sample trajectories sequentially.
 
@@ -93,7 +95,6 @@ class Sampler:
             ), "States should be a linear batch of states"
             n_trajectories = states.batch_shape[0]
 
-        
         device = states.tensor.device
         # finish state: is backward, state is initial state, otherwise sink state
         dones = (
@@ -109,7 +110,7 @@ class Sampler:
         trajectories_actions: List[TT["n_trajectories", torch.long]] = []
         # log prob of action in traj
         trajectories_logprobs: List[TT["n_trajectories", torch.float]] = []
-        # 
+        #
         trajectories_dones = torch.zeros(
             n_trajectories, dtype=torch.long, device=device
         )
@@ -121,13 +122,15 @@ class Sampler:
         # condition is True if done not all True -- not reach finish state
         while not all(dones):
             # create action of dummy action with shape is (n_traj, )
-            actions = env.Actions.make_dummy_actions(batch_shape=(n_trajectories,))
+            actions = env.Actions.make_dummy_actions(
+                batch_shape=(n_trajectories,))
             # log prob of action
             log_probs = torch.full(
                 (n_trajectories,), fill_value=0, dtype=torch.float, device=device
             )
             # NOTE: step 1 -- Sample action & log prob
-            valid_actions, actions_log_probs = self.sample_actions(env, states[~dones])
+            valid_actions, actions_log_probs = self.sample_actions(
+                env, states[~dones])
             actions[~dones] = valid_actions
             log_probs[~dones] = actions_log_probs
             # add new action & log prob
@@ -152,11 +155,11 @@ class Sampler:
             # NOTE: step 3 -- get log reward
             try:
                 trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
-                    states[new_dones & ~dones]
+                    states[new_dones & ~dones], info
                 )
             except NotImplementedError:
                 trajectories_log_rewards[new_dones & ~dones] = torch.log(
-                    env.reward(states[new_dones & ~dones])
+                    env.reward(states[new_dones & ~dones], info)
                 )
             states = new_states
             dones = dones | new_dones

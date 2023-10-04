@@ -5,9 +5,9 @@ from typing import Optional, Tuple, Union
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.preprocessors import IdentityPreprocessor, Preprocessor
-from gfn.states import DiscreteStates, States
+from .actions import Actions
+from .preprocessors import IdentityPreprocessor, Preprocessor
+from .states import DiscreteStates, States
 
 # Errors
 NonValidActionsError = type("NonValidActionsError", (ValueError,), {})
@@ -34,7 +34,8 @@ class Env(ABC):
             preprocessor (Optional[Preprocessor], optional): a Preprocessor object that converts raw states to a tensor that can be fed
                 into a neural network. Defaults to None, in which case the IdentityPreprocessor is used.
         """
-        self.device = torch.device(device_str) if device_str is not None else s0.device
+        self.device = torch.device(
+            device_str) if device_str is not None else s0.device
 
         self.s0 = s0.to(self.device)
         if sf is None:
@@ -163,7 +164,8 @@ class Env(ABC):
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating initial states in the new batch."""
         new_states = deepcopy(states)
-        valid_states_idx: TT["batch_shape", torch.bool] = ~new_states.is_initial_state
+        valid_states_idx: TT["batch_shape",
+                             torch.bool] = ~new_states.is_initial_state
         valid_actions = actions[valid_states_idx]
         valid_states = states[valid_states_idx]
 
@@ -183,11 +185,11 @@ class Env(ABC):
 
         return new_states
 
-    def reward(self, final_states: States) -> TT["batch_shape", torch.float]:
+    def reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape", torch.float]:
         """Either this or log_reward needs to be implemented."""
-        return torch.exp(self.log_reward(final_states))
+        return torch.exp(self.log_reward(final_states, infos))
 
-    def log_reward(self, final_states: States) -> TT["batch_shape", torch.float]:
+    def log_reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape", torch.float]:
         """Either this or reward needs to be implemented."""
         raise NotImplementedError("log_reward function not implemented")
 
@@ -231,7 +233,8 @@ class DiscreteEnv(Env, ABC):
 
         class DiscreteEnvActions(Actions):
             action_shape = (1,)
-            dummy_action = torch.tensor([-1], device=env.device)  # Double check
+            dummy_action = torch.tensor(
+                [-1], device=env.device)  # Double check
             exit_action = torch.tensor([n_actions - 1], device=env.device)
 
         return DiscreteEnvActions
