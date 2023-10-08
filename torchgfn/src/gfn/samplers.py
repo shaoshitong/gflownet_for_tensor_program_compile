@@ -84,12 +84,14 @@ class Sampler:
             AssertionError: When both states and n_trajectories are specified.
             AssertionError: When states are not linear.
         """
+        backward_state = None
         if states is None:
             assert (
                 n_trajectories is not None
             ), "Either states or n_trajectories should be specified"
             states = env.reset(batch_shape=(n_trajectories,))
         else:
+            backward_state = states
             assert (
                 len(states.batch_shape) == 1
             ), "States should be a linear batch of states"
@@ -151,16 +153,29 @@ class Sampler:
                 if self.estimator.is_backward
                 else sink_states_mask
             ) & ~dones
+            # all values from
+            # if new_dones.any():
+            #     print("new done state!")
             trajectories_dones[new_dones & ~dones] = step
             # NOTE: step 3 -- get log reward
             try:
-                trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
-                    states[new_dones & ~dones], info
-                )
+                if self.estimator.is_backward:
+                    trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
+                        backward_state[new_dones & ~dones], info
+                    )
+                else:
+                    trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
+                        states[new_dones & ~dones], info
+                    )
             except NotImplementedError:
-                trajectories_log_rewards[new_dones & ~dones] = torch.log(
-                    env.reward(states[new_dones & ~dones], info)
-                )
+                if self.estimator.is_backward:
+                    trajectories_log_rewards[new_dones & ~dones] = torch.log(
+                        env.reward(backward_state[new_dones & ~dones], info)
+                    )
+                else:
+                    trajectories_log_rewards[new_dones & ~dones] = torch.log(
+                        env.reward(states[new_dones & ~dones], info)
+                    )
             states = new_states
             dones = dones | new_dones
 

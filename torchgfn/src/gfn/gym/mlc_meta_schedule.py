@@ -440,14 +440,33 @@ class MetaScheduleEnv(DiscreteEnv):
         info = tuple([x])
 
         info += infos
-        # if is_forward:
-        features = restore_embedding(info)
-        # else:
-        #     features = restore_embedding(info)
-        features = torch.from_numpy(np.array(features)).to(self.device)
-        res = self.energy(features)
-        # res = torch.from_numpy(np.array(res.cpu()))
 
+        features = restore_embedding(info)
+        # # NOTE: add padding
+        # for i in range(len(features)):
+        #     N = 3
+        #     M = 172
+        #     n = len(features[i])
+        #     m = len(features[i][0])
+        #     print(f"Padding = (0, {N-n}), (0, {M-m})")
+        #     features[i] = np.pad(
+        #         features[i], [(0, N-n), (0, M-m)], 'constant', constant_values=0)
+        # print(np.array(features).dtype)
+
+        # features = torch.from_numpy(np.array(features)).to(self.device)
+        # print("Extract Features!")
+        # NOTE: This is for speed up predict!
+        val_dataloader = SegmentDataloder_new(
+            features, shuffle=False, batch_size=x.shape[0]
+        )
+        pred_results = []
+        for batch_data, _ in val_dataloader:
+            batch_data = batch_data.to(self.device)
+            outputs = self.energy(batch_data)
+            pred_results.extend(outputs.detach().cpu().numpy())
+
+        res = torch.from_numpy(np.array(pred_results)).to(self.device)
+        print(f"res = {res}")
         return -self.alpha * res.clone().detach().view(-1)
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:

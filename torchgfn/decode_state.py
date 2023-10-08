@@ -44,14 +44,15 @@ if __name__ == "__main__":
     state_len = 15 * 1 + 15 * 96
     action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path = "/root/kongdehao/model/median_tlp/save_model_v1/tlp_model_14.pkl"
-    # tlp_model on device "cuda:7"
-    device = "cuda:7"
-    with open(tlp_path, 'rb') as f:
-        cost_model = pickle.load(f)
-    cost_model.to(device)
+    tlp_path = "/root/kongdehao/model/min_tlp/tlp_model_73.pth"
 
-    # cost_model = torch.load(tlp_path, map_location=device)
+    device = "cuda"
+    # with open(tlp_path, 'rb') as f:
+    #     cost_model = pickle.load(f)
+    # cost_model.to(device)
+
+    cost_model = torch.load(tlp_path, map_location=device)
+    cost_model.to(device)
 
     # # NOTE: fake cost model for test
     # Cost Model as discriminator
@@ -130,8 +131,19 @@ if __name__ == "__main__":
     info_path = "/root/share/dataset/decode_info"
     gfn_path = "/root/kongdehao/model/gfn"
     # epoch = 5000
-    epoch = 20
+    epoch = 5000
     target = "cuda"
+
+    wandb_project = "train MetaSchedule GFN Env with TLP"
+    use_wandb = len(wandb_project) > 0
+    if use_wandb:
+        wandb.init(project=wandb_project)
+        wandb.config.update({
+            "learning_rate": 1e-3,
+            "architecture": "EBM GFlowNet",
+            "dataset": "GFlowNet Dataset",
+            "epochs": epoch,
+        })
 
     pbar = tqdm(range(0, epoch))
 
@@ -205,8 +217,10 @@ if __name__ == "__main__":
             # NOTE: step 1 -- sample trajectory
             f_trajectories = f_sampler.sample_trajectories(
                 env=env, n_trajectories=16, info=f_info)
+            print("Sample forward trajectory!")
             b_trajectories = b_sampler.sample_trajectories(
                 env=env, n_trajectories=16, states=states, info=b_info)
+            print("Sample backward trajectory!")
             # TODO: real_y that for training fake cost model -- discriminator
             # real_y = edm_model(x.float())
 
@@ -230,10 +244,10 @@ if __name__ == "__main__":
                 # log metrics to wandb
                 wandb.log({"b_loss": b_loss.item(),
                           "f_loss": f_loss.item(), "reward": reward})
-            if ep & 5 == 0:
+            if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
                 dir = os.path.join(gfn_path, f"gflownet_{ep}.pth")
-                last_dir = os.path.join(gfn_path, f"gflownet_{ep-25}.pth")
+                last_dir = os.path.join(gfn_path, f"gflownet_{ep-20}.pth")
                 torch.save(gfn, dir)
                 os.system(f"rm -rf {last_dir}")
 

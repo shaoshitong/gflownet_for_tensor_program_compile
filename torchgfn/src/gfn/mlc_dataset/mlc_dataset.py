@@ -91,9 +91,7 @@ def worker0(workload_path):
     database = ms.database.JSONDatabase(
         path_workload=workload_path, path_tuning_record=candidate_path)
     # print("In each worker, ", len(database.get_all_tuning_records()))
-
-    return database.copy()
-
+    return database
 
 def record_data_load(record_path):
 
@@ -171,7 +169,7 @@ def restore_embedding(decode_info):
     xs, databases_path, decodes, orders, conds, ptrs, target = decode_info
     bs = xs.shape[0]
     contexts, candidates = [], []
-    print("len of xs", len(xs))
+    # print("len of xs", len(xs))
     # TODO:.. print(len)
 
     for i in range(bs):
@@ -269,7 +267,7 @@ def restore_embedding(decode_info):
 
         contexts.append(context)
         candidates.append(candidate)
-        print(f"construct context & candidates {i}")
+        # print(f"construct context & candidates {i}")
 
     features, _ = extract_features(contexts[0], candidates)
 

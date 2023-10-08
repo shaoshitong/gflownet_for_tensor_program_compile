@@ -16,6 +16,8 @@
 # under the License.
 # type: ignore[import]
 
+from torch.utils.data import DataLoader, Dataset
+import logging
 import glob
 import math
 import os
@@ -38,6 +40,7 @@ import json
 from torch.nn.utils.rnn import pad_sequence
 # from ..utils import derived_object, shash2hex
 # from ..logging import get_logger
+
 
 class FeatureGroup:
     """Feature group
@@ -64,12 +67,12 @@ class FeatureGroup:
         group_hash: str,
         features: List[np.ndarray],
         costs: np.ndarray,
-        min_costs = None
+        min_costs=None
     ) -> None:
         self.group_hash = group_hash
         self.features = features
         self.costs = costs
-        self.min_cost = np.min(costs) if min_costs==None else min_costs
+        self.min_cost = np.min(costs) if min_costs == None else min_costs
 
     def append(  # pylint: disable=missing-function-docstring
         self,
@@ -81,21 +84,21 @@ class FeatureGroup:
         self.min_cost = np.min(self.costs)
 
     def to_json(self):
-        return {"features": [feature.tolist() for feature in self.features], "mean_costs":self.costs.tolist(), "min_cost":float(self.min_cost) } 
-    
+        return {"features": [feature.tolist() for feature in self.features], "mean_costs": self.costs.tolist(), "min_cost": float(self.min_cost)}
+
     @classmethod
     def from_json(cls, json_obj):
         key = list(json_obj.keys())[0]
         data = list(json_obj.values())[0]
-        return cls(key, data["features"], data["mean_costs"], data["min_cost"])        
+        return cls(key, data["features"], data["mean_costs"], data["min_cost"])
 
 
-import logging
-#logger = get_logger("transformer")  # pylint: disable=invalid-name
+# logger = get_logger("transformer")  # pylint: disable=invalid-name
+
 
 def getLogger():
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)  
+    logger.setLevel(logging.INFO)
     formatter = logging.Formatter(fmt="%(message)s")
     # StreamHandler
     sHandler = logging.StreamHandler()
@@ -110,13 +113,15 @@ def getLogger():
     if os.path.exists(log_path):
         os.remove(log_path)
     fHandler = logging.FileHandler(log_path, mode='w')
-    fHandler.setLevel(logging.DEBUG)  
-    fHandler.setFormatter(formatter)  
-    logger.addHandler(fHandler)  
+    fHandler.setLevel(logging.DEBUG)
+    fHandler.setFormatter(formatter)
+    logger.addHandler(fHandler)
 
     return logger
 
 # pylint: disable=too-many-instance-attributes
+
+
 class SegmentDataLoader:
     """Dataloader for Segment Sum MLP model.
 
@@ -139,20 +144,19 @@ class SegmentDataLoader:
         batch_size=128,
         shuffle=True,
     ):
-        
 
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.data_size = len(features)
-        
+
         self.iter_order = self.pointer = None
 
-        self.data_steps = pad_sequence([torch.tensor(f) for f in features], batch_first=True)
+        self.data_steps = pad_sequence(
+            [torch.tensor(f) for f in features], batch_first=True)
         # NOTE: fix bug for results is None in tlp predict
         self.labels = None
         if not results is None:
             self.labels = torch.FloatTensor(results)
-         
 
     def __len__(self):
         return self.data_size
@@ -168,23 +172,23 @@ class SegmentDataLoader:
     def __next__(self):
         if self.pointer >= self.data_size:
             raise StopIteration
-        batch_indices = self.iter_order[self.pointer : self.pointer + self.batch_size]
+        batch_indices = self.iter_order[self.pointer: self.pointer + self.batch_size]
         self.pointer += self.batch_size
         return self._fetch_indices(batch_indices)
 
     def _fetch_indices(self, indices):
-    
+
         batch_datas_steps = self.data_steps[indices]
         # batch_datas_steps = nn.utils.rnn.pad_sequence(
         #     batch_datas_steps, batch_first=True)
-        
+
         if str(torch.__version__)[0] == '0':
             batch_datas_steps = nn.utils.rnn.pad_sequence(
                 batch_datas_steps, batch_first=True)
         else:
             batch_datas_steps = nn.utils.rnn.pad_sequence(
-                [s[0] for s in torch.split(batch_datas_steps,1,0)], batch_first=True) 
-        
+                [s[0] for s in torch.split(batch_datas_steps, 1, 0)], batch_first=True)
+
         # NOTE: fix bug for self.labels is None in tlp predict
         batch_labels = 0
         if not self.labels is None:
@@ -192,14 +196,14 @@ class SegmentDataLoader:
 
         return (batch_datas_steps, batch_labels)
 
-from torch.utils.data import DataLoader,Dataset
 
 class SegmentDataset(Dataset):
     def __init__(self,
-        features,
-        results=None):
+                 features,
+                 results=None):
         self.data_size = len(features)
-        self.data_steps = pad_sequence([torch.tensor(f) for f in features], batch_first=True)
+        self.data_steps = pad_sequence(
+            [torch.tensor(f) for f in features], batch_first=True)
         if results is None:
             self.labels = torch.Tensor([0 for _ in range(self.data_size)])
         else:
@@ -212,7 +216,7 @@ class SegmentDataset(Dataset):
         batch_datas_steps = self.data_steps[indices]
         if str(torch.__version__)[0] == '0':
             batch_datas_steps = nn.utils.rnn.pad_sequence(
-                batch_datas_steps[None,...], batch_first=True)[0]
+                batch_datas_steps[None, ...], batch_first=True)[0]
         else:
             batch_datas_steps = nn.utils.rnn.pad_sequence(
                 (batch_datas_steps,), batch_first=True)[0]
@@ -220,8 +224,9 @@ class SegmentDataset(Dataset):
 
         return (batch_datas_steps, batch_labels)
 
-def SegmentDataloder_new(features,results=None,batch_size=128,shuffle=True,num_worker=4):
-    dataset = SegmentDataset(features,results)
+
+def SegmentDataloder_new(features, results=None, batch_size=128, shuffle=True, num_worker=4):
+    dataset = SegmentDataset(features, results)
     dataloader = DataLoader(dataset,
                             batch_size=batch_size,
                             shuffle=shuffle,
@@ -280,21 +285,20 @@ class LambdaRankLoss(nn.Module):
         return loss
 
 
-
 class TransformerModule(torch.nn.Module):
     fea_size: int
     step_size: int
-    
-    def __init__(self, fea_size = 172, step_size = 25) -> None:
+
+    def __init__(self, fea_size=172, step_size=25) -> None:
         super().__init__()
         self.fea_size = fea_size
         self.step_size = step_size
-        
+
         in_dim = self.fea_size
         hidden_dim = [64, 128, 256, 256]
         out_dim = [256, 128, 64, 1]
         hidden_dim_1 = hidden_dim[-1]
-        
+
         self.encoder = nn.Sequential(
             nn.Linear(in_dim, hidden_dim[0]),
             nn.ReLU(),
@@ -322,9 +326,8 @@ class TransformerModule(torch.nn.Module):
             nn.Linear(out_dim[2], out_dim[3]),
         )
 
-        
-    def forward(self,batch_datas_steps):
-        #batch_datas_steps = batch_datas_steps[:self.step_size, :self.fea_size]
+    def forward(self, batch_datas_steps):
+        # batch_datas_steps = batch_datas_steps[:self.step_size, :self.fea_size]
         encoder_output = self.encoder(batch_datas_steps)
 
         encoder_output = encoder_output.transpose(0, 1)
@@ -333,7 +336,7 @@ class TransformerModule(torch.nn.Module):
         output = self.decoder(output).sum(0)
 
         return output.squeeze()
-        
+
 
 def validate(model, valid_loader, loss_func, device):
     model.eval()
@@ -342,14 +345,14 @@ def validate(model, valid_loader, loss_func, device):
     for batch_data, batch_label in valid_loader:
         batch_data = batch_data.to(device)
         batch_label = batch_label.to(device)
-        
+
         valid_loss = loss_func(model(batch_data), batch_label)
         valid_losses.append(valid_loss.item())
-        
-    return np.sum(valid_losses)/len(valid_loader)
-       
 
-def from_json(path:str)->List[FeatureGroup]:
+    return np.sum(valid_losses)/len(valid_loader)
+
+
+def from_json(path: str) -> List[FeatureGroup]:
     assert os.path.exists(path)
     datasets = []
     json_files = glob.glob(os.path.join(path, "*.json"))
@@ -361,19 +364,18 @@ def from_json(path:str)->List[FeatureGroup]:
         assert len(feature_group.features) == len(feature_group.costs)
         datasets.append(feature_group)
     return datasets
-    
+
 
 def load_data(logger, datasets_all):
-    indices =np.array(range(len(datasets_all)))
+    indices = np.array(range(len(datasets_all)))
     train_len = int(len(indices) * 0.9)
 
     data_shuffle = np.random.permutation(indices)
     train_idx, val_idx = data_shuffle[:train_len], data_shuffle[train_len:]
 
-    
     train_data = []
     val_data = []
-    
+
     for idx in indices:
         if np.isin(idx, train_idx):
             train_data.append(datasets_all[idx])
@@ -386,20 +388,22 @@ def load_data(logger, datasets_all):
     val_feature = list(
         itertools_chain.from_iterable([g.features for g in val_data])
     )
-    #compute scores
-    train_label = np.concatenate([g.min_cost /np.array(g.costs) for g in train_data])
-    val_label = np.concatenate([g.min_cost/ np.array(g.costs) for g in val_data])
-    
-    logger.info("train_data length is %d",len(train_feature))
-    logger.info("val_data length is %d",len(val_feature))
-    
-    n_gpu = torch.cuda.device_count() 
+    # compute scores
+    train_label = np.concatenate(
+        [g.min_cost / np.array(g.costs) for g in train_data])
+    val_label = np.concatenate(
+        [g.min_cost / np.array(g.costs) for g in val_data])
+
+    logger.info("train_data length is %d", len(train_feature))
+    logger.info("val_data length is %d", len(val_feature))
+
+    n_gpu = torch.cuda.device_count()
     train_dataloader = SegmentDataLoader(
         train_feature, train_label, args.train_size_per_gpu * n_gpu, True)
-    val_dataloader =  SegmentDataLoader(
+    val_dataloader = SegmentDataLoader(
         val_feature, val_label, args.train_size_per_gpu * n_gpu, False
     )
-    
+
     return train_dataloader, val_dataloader
 
 
@@ -408,15 +412,16 @@ def train(train_loader, val_dataloader, device, logger):
 
     net = TransformerModule().to(device)
     # NOTE: specify device id order
-    net = torch.nn.DataParallel(net,device_ids=[0,1,2,3,4,5,6, 7])
-    
+    net = torch.nn.DataParallel(net, device_ids=[0, 1, 2, 3, 4, 5, 6, 7])
+
     loss_func = LambdaRankLoss(device)
-    
+
     n_epoch = args.n_epoch
-    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(
+        net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=n_epoch // 3, gamma=1)
-    
+        optimizer, step_size=n_epoch // 3, gamma=1)
+
     wandb_project = "train TLP Cost Model"
     use_wandb = len(wandb_project) > 0
     if use_wandb:
@@ -434,13 +439,13 @@ def train(train_loader, val_dataloader, device, logger):
     best_it = 0
     for epoch in range(n_epoch):
         tic = time.time()
-        
+
         net.train()
         train_loss = 0
         for batch, (batch_data, batch_label) in enumerate(train_loader):
             batch_data = batch_data.to(device)
             batch_label = batch_label.to(device)
-            
+
             optimizer.zero_grad()
             # logger.info(f"shape: {batch_data.shape} dim0: {type(batch_data[0])}, type: {batch_data.dtype}")
             loss = loss_func(net(batch_data), batch_label)
@@ -450,25 +455,30 @@ def train(train_loader, val_dataloader, device, logger):
             optimizer.step()
             train_loss += loss.item()
         lr_scheduler.step()
-        
+
         train_time = time.time() - tic
         avg_train_loss = train_loss/len(train_loader)
         valid_loss = validate(net, val_dataloader, loss_func, device)
-        loss_msg = "Train Loss: %.4f\tValid Loss: %.4f" % (avg_train_loss, valid_loss)
-        logger.info(f"Epoch: {epoch}\tBatch: {batch}\t{loss_msg}\tTrian Speed: {len(train_loader)/train_time}")
-        wandb.log({"Epoch": epoch, "Batch": batch, "Train Speed": len(train_loader)/train_time, "Train Loss": avg_train_loss,"Valid Loss": valid_loss})
-        
+        loss_msg = "Train Loss: %.4f\tValid Loss: %.4f" % (
+            avg_train_loss, valid_loss)
+        logger.info(
+            f"Epoch: {epoch}\tBatch: {batch}\t{loss_msg}\tTrian Speed: {len(train_loader)/train_time}")
+        wandb.log({"Epoch": epoch, "Batch": batch, "Train Speed": len(
+            train_loader)/train_time, "Train Loss": avg_train_loss, "Valid Loss": valid_loss})
+
         if valid_loss < min_loss:
             best_net = net
             best_it = epoch
             min_loss = valid_loss
 
     # checkpoint = {"tlp" : best_net.state_dict()}
-    torch.save(best_net, "%s/tlp_model_%d.pth" %(args.save_model_path, best_it))
+    torch.save(best_net, "%s/tlp_model_%d.pth" %
+               (args.save_model_path, best_it))
     # with open(save_model_path, 'wb') as f:
     #     pickle.dump(best_net.cpu(), f)
-    # net.to(device)            
-        
+    # net.to(device)
+
+
 def set_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
@@ -488,7 +498,8 @@ if __name__ == "__main__":
     # model & data are not on same device
     parser.add_argument("--cuda", type=str, default='cuda:0')
     # NOTE: Use you defined dataset path
-    parser.add_argument("--dataset_path", type=str, default='/root/share/dataset/extract_features_v2')
+    parser.add_argument("--dataset_path", type=str,
+                        default='/root/share/dataset/extract_features_v2_median')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
@@ -498,18 +509,19 @@ if __name__ == "__main__":
 
     parser.add_argument("--train_size_per_gpu", type=int, default=512)
     parser.add_argument("--val_size_per_gpu", type=int, default=512)
-    parser.add_argument("--n_epoch", type=int, default=500)
+    parser.add_argument("--n_epoch", type=int, default=50)
     parser.add_argument("--target", type=str, default="nvidia/nvidia-a100")
-    parser.add_argument("--save_model_path", type=str, default="/root/kongdehao/model/tlp")
-    
+    parser.add_argument("--save_model_path", type=str,
+                        default="/root/kongdehao/model/tlp/median")
+
     args = parser.parse_args()
-    
+
     logger = getLogger()
     logger.info(args)
 
     if not os.path.exists(args.save_model_path):
         os.mkdir(args.save_model_path)
-    
+
     datasets = from_json(path=args.dataset_path)
-    train_loader, val_loader = load_data(logger,datasets)
+    train_loader, val_loader = load_data(logger, datasets)
     train(train_loader, val_loader, device=args.cuda, logger=logger)

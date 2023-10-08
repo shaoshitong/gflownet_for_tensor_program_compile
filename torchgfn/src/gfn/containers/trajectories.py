@@ -41,12 +41,12 @@ class Trajectories(Container):
     def __init__(
         self,
         env: Env,
-        states = None,
-        actions = None,
-        when_is_done = None,
+        states=None,
+        actions=None,
+        when_is_done=None,
         is_backward: bool = False,
-        log_rewards = None,
-        log_probs = None,
+        log_rewards=None,
+        log_probs=None,
     ) -> None:
         """
         Args:
@@ -128,11 +128,12 @@ class Trajectories(Container):
     @property
     def log_rewards(self):
         if self._log_rewards is not None:
+            print(f"log reward = {self._log_rewards}")
             assert self._log_rewards.shape == (self.n_trajectories,)
             return self._log_rewards
         if self.is_backward:
             # return self.env.log_reward(self.states[0,torch.arange(self.n_trajectories)])
-            return self.env.log_reward(self.states[0,torch.arange(self.n_trajectories)])
+            return self.env.log_reward(self.states[0, torch.arange(self.n_trajectories)])
         try:
             return self.env.log_reward(self.last_states)
         except NotImplementedError:
@@ -203,13 +204,15 @@ class Trajectories(Container):
 
         self.actions.extend(other.actions)
         self.states.extend(other.states)
-        self.when_is_done = torch.cat((self.when_is_done, other.when_is_done), dim=0)
+        self.when_is_done = torch.cat(
+            (self.when_is_done, other.when_is_done), dim=0)
 
         # For log_probs, we first need to make the first dimensions of self.log_probs and other.log_probs equal
         # (i.e. the number of steps in the trajectories), and then concatenate them
         new_max_length = max(self.log_probs.shape[0], other.log_probs.shape[0])
         self.log_probs = self.extend_log_probs(self.log_probs, new_max_length)
-        other.log_probs = self.extend_log_probs(other.log_probs, new_max_length)
+        other.log_probs = self.extend_log_probs(
+            other.log_probs, new_max_length)
 
         self.log_probs = torch.cat((self.log_probs, other.log_probs), dim=1)
 
@@ -275,7 +278,8 @@ class Trajectories(Container):
             are not s0.
         """
         states = self.states
-        intermediary_states = states[~states.is_sink_state & ~states.is_initial_state]
+        intermediary_states = states[~states.is_sink_state &
+                                     ~states.is_initial_state]
         terminating_states = self.last_states
         terminating_states.log_rewards = self.log_rewards
         return intermediary_states, terminating_states
