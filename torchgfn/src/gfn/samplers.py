@@ -3,11 +3,11 @@ from typing import List, Optional, Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from .actions import Actions
-from .containers import Trajectories
-from .env import Env
-from .modules import GFNModule
-from .states import States
+from gfn.actions import Actions
+from gfn.containers import Trajectories
+from gfn.env import Env
+from gfn.modules import GFNModule
+from gfn.states import States
 
 
 class Sampler:
@@ -119,7 +119,7 @@ class Sampler:
         trajectories_log_rewards = torch.zeros(
             n_trajectories, dtype=torch.float, device=device
         )
-
+        features = None
         step = 0
         # condition is True if done not all True -- not reach finish state
         while not all(dones):
@@ -141,9 +141,9 @@ class Sampler:
             # NOTE: step 2 -- apply action to state
             # if backward sampler, apply action to state, get new state
             if self.estimator.is_backward:
-                new_states = env.backward_step(states, actions)
+                new_states = env.backward_step(states, actions, info)
             else:
-                new_states = env.step(states, actions)
+                new_states = env.step(states, actions, info)
             sink_states_mask = new_states.is_sink_state
 
             step += 1
@@ -154,17 +154,18 @@ class Sampler:
                 else sink_states_mask
             ) & ~dones
             # all values from
-            # if new_dones.any():
-            #     print("new done state!")
+            if new_dones.any():
+                print("new done state!")
             trajectories_dones[new_dones & ~dones] = step
             # NOTE: step 3 -- get log reward
             try:
                 if self.estimator.is_backward:
-                    trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
+                    trajectories_log_rewards[new_dones & ~dones], features = env.log_reward(
                         backward_state[new_dones & ~dones], info
                     )
                 else:
-                    trajectories_log_rewards[new_dones & ~dones] = env.log_reward(
+                    # NOTE: current is new state
+                    trajectories_log_rewards[new_dones & ~dones], features = env.log_reward(
                         states[new_dones & ~dones], info
                     )
             except NotImplementedError:
@@ -174,7 +175,7 @@ class Sampler:
                     )
                 else:
                     trajectories_log_rewards[new_dones & ~dones] = torch.log(
-                        env.reward(states[new_dones & ~dones], info)
+                        env.reward(new_states[new_dones & ~dones], info)
                     )
             states = new_states
             dones = dones | new_dones
@@ -194,6 +195,7 @@ class Sampler:
             is_backward=self.estimator.is_backward,
             log_rewards=trajectories_log_rewards,
             log_probs=trajectories_logprobs,
+            features=features,
         )
 
         return trajectories

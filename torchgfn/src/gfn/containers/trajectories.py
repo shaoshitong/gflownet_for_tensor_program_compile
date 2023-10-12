@@ -47,6 +47,7 @@ class Trajectories(Container):
         is_backward: bool = False,
         log_rewards=None,
         log_probs=None,
+        features=None,
     ) -> None:
         """
         Args:
@@ -62,6 +63,7 @@ class Trajectories(Container):
         that can be populated on the fly. If log_rewards is None, then `env.log_reward`
         is used to compute the rewards, at each call of self.log_rewards
         """
+        self.features = features
         self.env = env
         self.is_backward = is_backward
         self.states = (
@@ -128,7 +130,7 @@ class Trajectories(Container):
     @property
     def log_rewards(self):
         if self._log_rewards is not None:
-            print(f"log reward = {self._log_rewards}")
+            # print(f"log reward = {self._log_rewards}")
             assert self._log_rewards.shape == (self.n_trajectories,)
             return self._log_rewards
         if self.is_backward:

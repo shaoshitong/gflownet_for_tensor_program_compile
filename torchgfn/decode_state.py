@@ -134,18 +134,20 @@ if __name__ == "__main__":
     epoch = 5000
     target = "cuda"
 
-    wandb_project = "train MetaSchedule GFN Env with TLP"
-    use_wandb = len(wandb_project) > 0
-    if use_wandb:
-        wandb.init(project=wandb_project)
-        wandb.config.update({
-            "learning_rate": 1e-3,
-            "architecture": "EBM GFlowNet",
-            "dataset": "GFlowNet Dataset",
-            "epochs": epoch,
-        })
+    # wandb_project = "train MetaSchedule GFN Env with TLP"
+    # use_wandb = len(wandb_project) > 0
+    # if use_wandb:
+    #     wandb.init(project=wandb_project)
+    #     wandb.config.update({
+    #         "learning_rate": 1e-3,
+    #         "architecture": "EBM GFlowNet",
+    #         "dataset": "GFlowNet Dataset",
+    #         "epochs": epoch,
+    #     })
 
     pbar = tqdm(range(0, epoch))
+    pre_f = None
+    pre_b = None
 
     for ep in (pbar):
         cond = None
@@ -172,7 +174,10 @@ if __name__ == "__main__":
             x = x.cuda(non_blocking=True).long()
             # Convert into [batch, -1]
             x = x.view(x.shape[0], -1)
+
             score = normalize_score(score.cuda(non_blocking=True))
+            if torch.all(x == 0):
+                print("x is all zeros")
             # create env state
             states = env.States(x)
 
@@ -188,7 +193,7 @@ if __name__ == "__main__":
             #     path_workload=workload_paths[i], path_tuning_record=candidate_paths[i]) for i in range(num)]
 
             npz_file0 = sorted(glob.glob(os.path.join(
-                info_path, f"info*.npz"), recursive=True))
+                info_path, f"*.npz"), recursive=True))
 
             workload_paths0 = [os.path.join(
                 info_path, f"workloads_{i}.json") for i in range(0, bs)]
@@ -198,29 +203,62 @@ if __name__ == "__main__":
             num0 = len(workload_paths0)
             databases_path0 = [(workload_paths0[i], candidate_paths0[i])
                                for i in range(num0)]
-            # databases0 = [ms.database.JSONDatabase(
-            #     path_workload=workload_path0[i], path_tuning_record=candidate_path0[i]) for i in range(num0)]
+            
+            decode0, order0, x0, run_secs0, cond0, ptr0 = [], [], [], [], [], []
+            for ii in range(num0):
+                file0 = npz_file0[ii]
+                file0 = np.load(file0)
 
-            file0 = npz_file0[0]
-            file0 = np.load(file0)
+                info0 = formatter(file0)
+                decode0.append(info0[0])
+                order0.append(info0[1])
+                x0.append(info0[2])
+                run_secs0.append(info0[3])
+                cond0.append(info0[4])
+                ptr0.append(info0[5])
 
-            info0 = formatter(file0)
-            decode0, order0, x0, run_secs0, cond0, ptr0 = info0
+            decode0 = torch.stack(decode0, 0)
+            order0 = torch.stack(order0, 0)
+            x0 = torch.stack(x0, 0)
+            run_secs0 = torch.stack(run_secs0, 0)
+            cond0 = torch.stack(cond0, 0)
+            ptr0 = torch.stack(ptr0, 0)
+
             f_info = (databases_path0, decode0, order0, cond0, ptr0, target)
             b_info = (databases_path, decode, order, cond, ptr, target)
 
-            # f_infos = (True, f_info)
-            # b_infos = (False, b_info)
-            # features = restore_embedding(info)
+            # # NOTE: for test restore_embedding
+            # info00 = (x0, databases_path0, decode0,
+            #           order0, cond0, ptr0, target)
+            # features = restore_embedding(info00)
             # print(f"Successful from {step} to {step+bs}!")
 
             # NOTE: step 1 -- sample trajectory
             f_trajectories = f_sampler.sample_trajectories(
                 env=env, n_trajectories=16, info=f_info)
-            print("Sample forward trajectory!")
+            print(
+                f"Sample forward trajectory! reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
             b_trajectories = b_sampler.sample_trajectories(
                 env=env, n_trajectories=16, states=states, info=b_info)
-            print("Sample backward trajectory!")
+            print(
+                f"Sample backward trajectory! reward = {torch.exp(b_trajectories.log_rewards).mean().item()}")
+            features_f = f_trajectories.features
+            features_b = b_trajectories.features
+            for id in range(bs):
+                # forward != backward features
+                print(
+                    f"forward VS backward features = { torch.nonzero(torch.from_numpy(features_f[id] != features_b[id]))}")
+                # forward == pre forward features (same decode info)
+                if pre_f != None:
+                    print(
+                        f"forward VS pre features = {torch.nonzero(torch.from_numpy(features_f[id] != pre_f[id]))}")
+                # backward != pre backward features
+                if pre_b != None:
+                    print(
+                        f"backward VS pre features = {torch.nonzero(torch.from_numpy(features_b[id] != pre_b[id]))}")
+
+            pre_f = f_trajectories.features
+            pre_b = b_trajectories.features
             # TODO: real_y that for training fake cost model -- discriminator
             # real_y = edm_model(x.float())
 
@@ -232,6 +270,10 @@ if __name__ == "__main__":
             # NOTE: step 2 -- compute loss
             f_loss = gfn.loss(env, f_trajectories)
             b_loss = gfn.loss(env, b_trajectories)
+            print(
+                f"After loss, forward reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
+            print(
+                f"After loss, backward reward = {torch.exp(b_trajectories.log_rewards).mean().item()}")
             # TODO: remove edm_loss
             loss = b_loss + f_loss  # + edm_loss
             loss.backward()
@@ -241,9 +283,9 @@ if __name__ == "__main__":
                 reward = torch.exp(f_trajectories.log_rewards).mean().item()
                 pbar.set_postfix(
                     {"b_loss": b_loss.item(), "f_loss": f_loss.item(), "reward": reward})
-                # log metrics to wandb
-                wandb.log({"b_loss": b_loss.item(),
-                          "f_loss": f_loss.item(), "reward": reward})
+                # # log metrics to wandb
+                # wandb.log({"b_loss": b_loss.item(),
+                #           "f_loss": f_loss.item(), "reward": reward})
             if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
                 dir = os.path.join(gfn_path, f"gflownet_{ep}.pth")

@@ -5,9 +5,9 @@ from typing import Optional, Tuple, Union
 import torch
 from torchtyping import TensorType as TT
 
-from .actions import Actions
-from .preprocessors import IdentityPreprocessor, Preprocessor
-from .states import DiscreteStates, States
+from gfn.actions import Actions
+from gfn.preprocessors import IdentityPreprocessor, Preprocessor
+from gfn.states import DiscreteStates, States
 
 # Errors
 NonValidActionsError = type("NonValidActionsError", (ValueError,), {})
@@ -90,7 +90,7 @@ class Env(ABC):
 
     @abstractmethod
     def maskless_step(
-        self, states: States, actions: Actions
+        self, states: States, actions: Actions, info
     ) -> TT["batch_shape", "state_shape", torch.float]:
         """Function that takes a batch of states and actions and returns a batch of next
         states. Does not need to check whether the actions are valid or the states are sink states.
@@ -98,7 +98,7 @@ class Env(ABC):
 
     @abstractmethod
     def maskless_backward_step(
-        self, states: States, actions: Actions
+        self, states: States, actions: Actions, info
     ) -> TT["batch_shape", "state_shape", torch.float]:
         """Function that takes a batch of states and actions and returns a batch of previous
         states. Does not need to check whether the actions are valid or the states are sink states.
@@ -126,6 +126,7 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
+        info
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating sink states in the new batch."""
@@ -147,7 +148,7 @@ class Env(ABC):
         not_done_actions = actions[~new_sink_states_idx]
 
         new_not_done_states_tensor = self.maskless_step(
-            not_done_states, not_done_actions
+            not_done_states, not_done_actions, info
         )
         # if isinstance(new_states, DiscreteStates):
         #     new_not_done_states.masks = self.update_masks(not_done_states, not_done_actions)
@@ -160,6 +161,7 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
+        info,
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating initial states in the new batch."""
@@ -176,7 +178,7 @@ class Env(ABC):
 
         # Calculate the backward step, and update only the states which are not Done.
         new_not_done_states_tensor = self.maskless_backward_step(
-            valid_states, valid_actions
+            valid_states, valid_actions, info
         )
         new_states.tensor[valid_states_idx] = new_not_done_states_tensor
 
@@ -185,11 +187,11 @@ class Env(ABC):
 
         return new_states
 
-    def reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape", torch.float]:
+    def reward(self, final_states: DiscreteStates, infos=None):
         """Either this or log_reward needs to be implemented."""
         return torch.exp(self.log_reward(final_states, infos))
 
-    def log_reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape", torch.float]:
+    def log_reward(self, final_states: DiscreteStates, infos=None):
         """Either this or reward needs to be implemented."""
         raise NotImplementedError("log_reward function not implemented")
 
@@ -250,11 +252,21 @@ class DiscreteEnv(Env, ABC):
         self,
         states: DiscreteStates,
         actions: Actions,
+        info,
     ) -> States:
-        new_states = super().step(states, actions)
+        new_states = super().step(states, actions, info)
         new_states.update_masks()
         return new_states
-
+    def backward_step(
+        self,
+        states: DiscreteStates,
+        actions: Actions,
+        info,
+    ) -> States:
+        new_states = super().backward_step(states, actions, info)
+        new_states.update_masks()
+        return new_states
+    
     def get_states_indices(
         self, states: DiscreteStates
     ) -> TT["batch_shape", torch.long]:

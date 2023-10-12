@@ -329,14 +329,16 @@ class MetaScheduleEnv(DiscreteEnv):
 
     # forward one step
     def maskless_step(
-        self, states: States, actions: Actions
+        self, states: States, actions: Actions, info
     ) -> TT["batch_shape", "state_shape", torch.float]:
 
         # 1) Select the first [0-one_hot_ndim*one_hot_seq_len-1] action to \
         # Update. Due to states.tensor[0:one_hot_seq_len-1] is defined as  \
         # one-hot vector, we should first calcuate the index_0 and then    \
         # employ the 'scatter' operation to update state.
-
+        
+        databases_path, decode, order, cond, ptr, target = info
+        
         mask_0 = (actions.tensor < self.one_hot_ndim *
                   self.one_hot_seq_len).squeeze(-1)
         index_0 = (actions.tensor / self.one_hot_ndim).long()
@@ -366,7 +368,7 @@ class MetaScheduleEnv(DiscreteEnv):
         return states.tensor
 
     def maskless_backward_step(
-        self, states: States, actions: Actions
+        self, states: States, actions: Actions, info
     ) -> TT["batch_shape", "state_shape", torch.float]:
 
         # In this environment, states are represented as n-dimensional ve \
@@ -387,6 +389,7 @@ class MetaScheduleEnv(DiscreteEnv):
         # Update. Due to states.tensor[0:one_hot_seq_len-1] is defined as  \
         # one-hot vector, we should first calcuate the index_0 and then    \
         # employ the 'scatter' operation to update state.
+        databases_path, decode, order, cond, ptr, target = info
 
         mask_0 = (actions.tensor < self.one_hot_ndim *
                   self.one_hot_seq_len).squeeze(-1)
@@ -423,7 +426,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
     # NOTE: import tlp cost model
 
-    def log_reward(self, final_states: DiscreteStates, infos=None) -> TT["batch_shape"]:
+    def log_reward(self, final_states: DiscreteStates, infos=None):
 
         from mlc_dataset.mlc_dataset import restore_embedding
         raw_states = final_states.tensor
@@ -435,26 +438,17 @@ class MetaScheduleEnv(DiscreteEnv):
         # is_forward, info = infos
 
         if x.shape[0] == 0:
-            return 0
+            return (0, 0)
 
+        # print(f"log reward input x = {x}")
+        if torch.all(x == 0):
+            print("x is all zeros")
         info = tuple([x])
 
         info += infos
 
         features = restore_embedding(info)
-        # # NOTE: add padding
-        # for i in range(len(features)):
-        #     N = 3
-        #     M = 172
-        #     n = len(features[i])
-        #     m = len(features[i][0])
-        #     print(f"Padding = (0, {N-n}), (0, {M-m})")
-        #     features[i] = np.pad(
-        #         features[i], [(0, N-n), (0, M-m)], 'constant', constant_values=0)
-        # print(np.array(features).dtype)
-
-        # features = torch.from_numpy(np.array(features)).to(self.device)
-        # print("Extract Features!")
+        # print(f"features = {features}")
         # NOTE: This is for speed up predict!
         val_dataloader = SegmentDataloder_new(
             features, shuffle=False, batch_size=x.shape[0]
@@ -467,7 +461,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
         res = torch.from_numpy(np.array(pred_results)).to(self.device)
         print(f"res = {res}")
-        return -self.alpha * res.clone().detach().view(-1)
+        return -self.alpha * res.clone().detach().view(-1), features
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
     #     """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""

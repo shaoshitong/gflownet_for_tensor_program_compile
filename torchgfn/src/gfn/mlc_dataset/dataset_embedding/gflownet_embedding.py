@@ -90,9 +90,9 @@ class GflowNetEmbedding:
         count_ptr += len(_embedding_results)
         count_Ptr_results.append(count_ptr)
         # condition is input for constraints of GFlowNet, also for decoding (include prim type)
-        # result is binary vector: 15*10 (15 is annotation+cuda sample number, 10 is sample result index range [0, 9]) + 15*96
+        # result is binary vector: 15*10 (15 is annotation+cuda number, 10 is sample result index range [0, 9]) + 15*96
         # (15 is sample perfect tile number, 96 is 质因数分解 number)
-        # TODO: input condition into GFlowNet
+        # TODO: input condition into GFlowNet as mask
         return embedding_results, embedding_conditions, count_Ptr_results
 
     @staticmethod

@@ -1,3 +1,5 @@
-import importlib_metadata as met
-
-__version__ = met.version("torchgfn")
+from .actions import *
+from .containers import *
+from .env import *
+from .modules import *
+from .states import *

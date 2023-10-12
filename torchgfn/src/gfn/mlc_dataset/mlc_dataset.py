@@ -93,6 +93,7 @@ def worker0(workload_path):
     # print("In each worker, ", len(database.get_all_tuning_records()))
     return database
 
+
 def record_data_load(record_path):
 
     pool = multiprocessing.Pool(112)
@@ -176,49 +177,52 @@ def restore_embedding(decode_info):
         x, database_path, decode, order, cond, ptr = \
             xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
 
-        res_x, res_y, cond_x, cond_y, max_len, emb0_x, emb1_x = decode
+        cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
         ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
+        ex_cond0, ex_cond1 = torch.split(
+            cond, split_size_or_sections=MAX_NUMBER, dim=0)
 
         ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
-        ex_emb0 = Fun.one_hot(ex_emb0, num_classes=10)
+        # convert into one-hot format
+        ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
 
         emb0_x = emb0_x.item()
         emb1_x = emb1_x.item()
 
         emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
         emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
+
+        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_NUMBER-cond_x0], 0)
+        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_NUMBER-cond_x1], 0)
+
+        cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
+        cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
         # convert cuda:0 device into cpu
         emb0 = emb0.cpu()
         emb1 = emb1.cpu()
+        cond0 = cond0.cpu()
+        cond1 = cond1.cpu()
 
         res = []
+        emb_conds = []
         p0 = 0  # emb0 position
         p1 = 0  # emb1
         for i in range(max_len):
             if order[i] == 0:
                 res.append(emb0[p0].numpy())
+                emb_conds.append(cond0[p0].numpy())
                 p0 += 1
             else:
                 res.append(emb1[p1].numpy())
+                emb_conds.append(cond1[p1].numpy())
                 p1 += 1
 
-        max_cond_len = 300
-        cond, _ = torch.split(
-            cond, [cond_x*cond_y, max_cond_len-cond_x*cond_y], 0)
-        cond = list(cond.view(cond_x, cond_y).numpy())
         if isinstance(ptr, np.ndarray):
             ptr = ptr.astype(int)
             ptr = ptr.tolist()
         else:
             ptr = ptr.int()
             ptr = ptr.tolist()
-
-        gm = GflowNetEmbedding()
-        new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=res,
-                                              embedding_conditions=cond, count_Ptr_results=ptr)
-        # print("Successful generate new instruction & decisions")
-
-        # database made up of records, including candidates info
 
         workload_path, candidate_path = database_path
         # NOTE: cost 1ms -- not return database, otherwise records is empty list
@@ -235,16 +239,28 @@ def restore_embedding(decode_info):
         sub_sch = candidate.sch
         # trace include instructions & decisions
         sub_trace = sub_sch.trace
+        # instructions include deterministic and stochastic
+        sub_insts = sub_trace.insts
+        # decision only include stochastic instructions
+        sub_decisions = sub_trace.decisions
+        # print(f"old decision = {list(sub_decisions.values())}")
+        gm = GflowNetEmbedding()
+        new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
+                                              embedding_conditions=emb_conds, count_Ptr_results=ptr)
+
+        # NOTE: new decision is null list -- gm must pass valid insts & decisions
+        # print(f"new decision = {new_sub_decisions}")
+
         # Must use with_decision() to set sub_trace
         for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-            sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
+            # new_sub_decision = tvm.tir.const(1, dtype='int32')
+            # NOTE: bug1 must assign to sub_trace
+            sub_trace = sub_trace.with_decision(
+                new_sub_inst, new_sub_decision, True)
 
+        print(f"After decision = {list(sub_trace.decisions.values())}")
         from tvm.meta_schedule.database.database import TuningRecord
 
-        # new_database = ms.database.JSONDatabase(
-        #     path_workload="/root/share/dataset/new_database",
-        #     path_tuning_record="/root/share/dataset/new_database",
-        # )
         new_database = database
         new_database.commit_workload(record.workload.mod)
         new_database.commit_tuning_record(TuningRecord(
@@ -265,9 +281,11 @@ def restore_embedding(decode_info):
         #     if context != contexts[-1]:
         #         print("diff context")
 
+        # check correctness for 
+        # print(f"final candidate decision = {list(sub_decisions.values())}")
         contexts.append(context)
         candidates.append(candidate)
-        # print(f"construct context & candidates {i}")
+        # print(f"after record = {record}, candidate = {candidate}, decision = ")
 
     features, _ = extract_features(contexts[0], candidates)
 
@@ -294,7 +312,6 @@ def gflownet_data_save(data_path, save_path):
             return 1e10
         return float(np.min([float(s) for s in res.run_secs]))
 
-    max_cond_len = 0
     max_order_len = 0
 
     for database in databases:
@@ -316,58 +333,73 @@ def gflownet_data_save(data_path, save_path):
 
             extend_embedding_0 = []
             extend_embedding_1 = []
+            ex_cond0 = []
+            ex_cond1 = []
             # list(3, 10) (3, 24) (3, 1) -- anno/cuda
-            # (3, 96) (3, 24) (3, 1) -- sample tile
+            # (4, 32, 3) (4, 34) (3, 3, 7) -- sample tile
             embedding_results, embedding_conditions, count_ptr_list = gm(
                 sub_insts, sub_decisions, True)
-            # NOTE: result shape (x, y) for decode
-            res_x = len(embedding_results)
-            res_y = embedding_results[0].shape[0]
-            decode = [res_x, res_y]
 
-            # NOTE: condition shape (x, y) for decode
-            cond_x = len(embedding_conditions)
-            cond_y = embedding_conditions[0].shape[0]
-            decode += (cond_x, cond_y)
-
+            decode = []
+            # NOTE: (cond_x1, cond_y1) is anno&cuda shape (cond_x2, cond_y2) is tile shape
+            # cond_x = len(embedding_conditions)
+            # cond_y = embedding_conditions[0].shape[0]
+            # decode += (cond_x, cond_y)
+            cond_x1 = 0
+            cond_y1 = 0
+            cond_x2 = 0
+            cond_y2 = 0
             order = []
             max_len = 0
-            for embedding in embedding_results:
+            for ii in range(len(embedding_results)):
+                embedding = embedding_results[ii]
+                cond = embedding_conditions[ii]
                 max_len += 1
                 _len = embedding.shape[0]
-                if _len > 10:  # If the primitive type is the sample perfectile -- len = 96
+                if _len > 10:  # If the primitive type is the sample perfectile -- len = 32
                     order.append(1)
+                    cond_x2 += 1
+                    cond_y2 = embedding_conditions[max_len-1].shape[0]  # 34
                     extend_embedding_1.append(
-                        torch.from_numpy(embedding.reshape(-1)))
+                        torch.from_numpy(embedding.reshape(-1)))  # reshape (32, 3) -- (96)
+                    ex_cond1.append(torch.from_numpy(
+                        cond.squeeze().astype(float)))
                     # print("Sample Perfect Tile shape: ", extend_embedding_1[-1].shape)
                 else:  # prim type is other type: annotation & cuda bind -- len = 10
                     order.append(0)
+                    cond_x1 += 1
+                    cond_y1 = embedding_conditions[max_len-1].shape[0]  # 24
                     extend_embedding_0.append(
                         torch.from_numpy(embedding.squeeze()))
+                    ex_cond0.append(torch.from_numpy(
+                        cond.astype(float).squeeze()))
                     # print("Annotation & CUDA Bind shape: ", extend_embedding_0[-1].shape)
             if max_len > max_order_len:
                 max_order_len = max_len
 
-            decode += [max_len]
+            decode += [cond_x1, cond_y1, cond_x2, cond_y2, max_len]
             # NOTE: Padding to max length for embeddings
             # TODO: Need padding condition
             MAX_NUMBER = 15
+            # NOTE: padding order into MAX_NUMBER
+            while len(order) < MAX_NUMBER:
+                order.append(-1)
 
-            # flag for if embedding_0/embedding_1 exist
-            exist_0 = True
-            exist_1 = True
             # stack for convert [(10, ), (10, )..] into (3, 10)
             if len(extend_embedding_0) > 0:
                 extend_embedding_0 = torch.stack(extend_embedding_0, 0)
+                ex_cond0 = torch.stack(ex_cond0, 0)
             else:  # first shape is 15*10 -- binary vector
-                exist_0 = False
                 extend_embedding_0 = torch.zeros(MAX_NUMBER, 10)
+                ex_cond0 = torch.zeros(MAX_NUMBER, 24)
             # stack for convert [(96, ), (96, )..] into (6, 96)
             if len(extend_embedding_1) > 0:
                 extend_embedding_1 = torch.stack(extend_embedding_1, 0)
+                ex_cond1 = torch.stack(ex_cond1, 0)
             else:  # second shape is 15*96 -- binary vector
-                exist_1 = False
+
                 extend_embedding_1 = torch.zeros(MAX_NUMBER, 96)
+                ex_cond1 = torch.zeros(MAX_NUMBER, 34)
 
             # NOTE: add embedding 0/1 shape into decode info
             sz1 = extend_embedding_0.shape[0]
@@ -380,6 +412,12 @@ def gflownet_data_save(data_path, save_path):
             extend_embedding_1 = torch.cat([extend_embedding_1,
                                             torch.zeros(MAX_NUMBER - sz2, extend_embedding_1.shape[1]).to(extend_embedding_1.device)], 0)
 
+            # NOTE: padding zeros, shape[1] is same -- convert into (15, ..)
+            ex_cond0 = torch.cat([ex_cond0,
+                                  torch.zeros(MAX_NUMBER - sz1, ex_cond0.shape[1]).to(ex_cond0.device)], 0)
+            ex_cond1 = torch.cat([ex_cond1,
+                                  torch.zeros(MAX_NUMBER - sz2, ex_cond1.shape[1]).to(ex_cond1.device)], 0)
+
             # Now extend_embedding_0's shape is (15,10), and extend_embedding_1's shape is (15,96)
             # After that, we flatten and concatenate them.
             # Translate one-hot to label (15, )
@@ -389,15 +427,10 @@ def gflownet_data_save(data_path, save_path):
             # Concatenate them, the last_embedding's shape is (15+15*96, ) = (1455)
             last_embedding = torch.cat(
                 [extend_embedding_0, extend_embedding_1], 0)
-            # for embedding_condition in embedding_conditions:
-            #     print("embedding condition shape: ", embedding_condition.shape)
-
-            # NOTE: We do not need to translate it at a fine-grained level.
-            # (3, 24) --> (72, )
-            last_condition = torch.cat([torch.from_numpy(embedding_condition.astype(
-                int).reshape(-1)) for embedding_condition in embedding_conditions], 0)
-            if max_cond_len < last_condition.shape[0]:
-                max_cond_len = last_condition.shape[0]
+            # NOTE: padding cond0 into 34 = ex_cond1.shape[1]
+            ex_cond0 = torch.cat([ex_cond0,
+                                  torch.zeros(MAX_NUMBER, 10).to(ex_cond0.device)], 1)
+            last_condition = torch.cat([ex_cond0, ex_cond1], 0)
 
             last_ptr_list = torch.Tensor(count_ptr_list)
 
@@ -411,38 +444,24 @@ def gflownet_data_save(data_path, save_path):
             print(f"Successfully Save File mlc_{count_ptr}.npz")
             count_ptr += 1
 
-    print("Max Condition len = ", max_cond_len)
     print("Max order len = ", max_order_len)
 
 
-def formatter(file, max_order_len=15, max_cond_len=300):
+def formatter(file):
     decode = file["decode"]
-
+    decode = torch.from_numpy(decode)
     order = file["order"]
     order = torch.from_numpy(order)
-
     last_embedding = file['last_embedding']
+    last_embedding = torch.from_numpy(last_embedding)
     last_condition = file['last_condition']
     last_condition = torch.from_numpy(last_condition)
 
     last_ptr_list = file['last_ptr_list']
+    last_ptr_list = torch.from_numpy(last_ptr_list)
     run_secs = file['run_secs']
-    if last_condition.ndim > 1:
-        n, m = last_condition.shape
-        padding = torch.zeros((
-            n, max_cond_len - m)).to(last_condition.device)
-        last_condition = torch.cat([last_condition, padding], 1)
-        n1, m1 = order.shape
-        padding0 = torch.zeros((n1, max_order_len - m1))
-        order = torch.cat([order, padding0], 1)
-    else:
-        n = last_condition.shape[0]
-        padding = torch.zeros(
-            max_cond_len - n).to(last_condition.device)
-        last_condition = torch.cat([last_condition, padding], 0)
-        n1 = order.shape[0]
-        padding0 = torch.zeros(max_order_len - n1)
-        order = torch.cat([order, padding0], 0)
+    run_secs = torch.from_numpy(run_secs)
+
     return decode, order, last_embedding, run_secs, last_condition, last_ptr_list
 
 # dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda

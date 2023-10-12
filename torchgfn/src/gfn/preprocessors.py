@@ -3,7 +3,7 @@ from typing import Callable
 
 from torchtyping import TensorType as TT
 
-from .states import States
+from gfn.states import States
 
 
 class Preprocessor(ABC):

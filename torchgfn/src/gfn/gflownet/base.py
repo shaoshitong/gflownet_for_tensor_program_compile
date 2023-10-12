@@ -71,7 +71,8 @@ class PFBasedGFlowNet(GFlowNet):
 
     def sample_trajectories(self, env: Env, n_samples: int) -> Trajectories:
         sampler = Sampler(estimator=self.pf)
-        trajectories = sampler.sample_trajectories(env, n_trajectories=n_samples)
+        trajectories = sampler.sample_trajectories(
+            env, n_trajectories=n_samples)
         return trajectories
 
 
@@ -106,18 +107,18 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
             AssertionError: when actions and states dimensions mismatch.
         """
         # fill value is the value used for invalid states (sink state usually)
-        # NOTE: need for double check!
+        # NOTE: need for double check! -- refer gflownet/tb_mle_learnedpb_loss
         if trajectories.is_backward:
-            
+
             valid_states = trajectories.states[~trajectories.states.is_initial_state]
             valid_actions = trajectories.actions[~trajectories.actions.is_dummy]
-        
+
             # uncomment next line for debugging
             # assert trajectories.states.is_sink_state[:-1].equal(trajectories.actions.is_dummy)
             if valid_states.batch_shape != tuple(valid_actions.batch_shape):
-                raise AssertionError("Something wrong happening with log_pf evaluations")
-            
-            
+                raise AssertionError(
+                    "Something wrong happening with log_pf evaluations")
+
             if self.on_policy:
                 log_pb_trajectories = trajectories.log_probs
             else:
@@ -125,16 +126,17 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
                 valid_log_pb_actions = self.pb.to_probability_distribution(
                     valid_states, module_output
                 ).log_prob(valid_actions.tensor)
+                # NOTE: fill_value!
                 log_pb_trajectories = torch.full_like(
                     trajectories.actions.tensor[..., 0],
                     fill_value=fill_value,
                     dtype=torch.float,
                 )
                 log_pb_trajectories[~trajectories.actions.is_dummy] = valid_log_pb_actions
-            
 
             source_states_tensor = valid_states.s0.repeat(
-            *valid_states.batch_shape, *((1,) * len(valid_states.state_shape))
+                *valid_states.batch_shape, *
+                ((1,) * len(valid_states.state_shape))
             )
             out = valid_states.tensor == source_states_tensor
             state_ndim = len(valid_states.state_shape)
@@ -142,13 +144,14 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
                 out = out.any(dim=-1)
             is_initial_state = ~out
             non_sink_valid_states = valid_states[~is_initial_state]
-            
-            source_actions_tensor = torch.zeros_like(trajectories.actions.tensor)
-            source_actions_tensor[-1,...] = 1
+
+            source_actions_tensor = torch.zeros_like(
+                trajectories.actions.tensor)
+            source_actions_tensor[-1, ...] = 1
             is_initial_actions = source_actions_tensor.bool()
             is_initial_actions = is_initial_actions[~trajectories.actions.is_dummy]
             non_exit_valid_actions = valid_actions[~is_initial_actions]
-            
+
             module_output = self.pf(non_sink_valid_states)
             valid_log_pf_actions = self.pf.to_probability_distribution(
                 non_sink_valid_states, module_output
@@ -160,9 +163,11 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
                 dtype=torch.float,
             )
             log_pf_trajectories_slice = torch.full_like(
-                valid_actions.tensor[..., 0], fill_value=fill_value, dtype=torch.float
+                valid_actions.tensor[...,
+                                     0], fill_value=fill_value, dtype=torch.float
             )
-            log_pf_trajectories_slice[~is_initial_actions.squeeze(-1)] = valid_log_pf_actions
+            log_pf_trajectories_slice[~is_initial_actions.squeeze(
+                -1)] = valid_log_pf_actions
             log_pf_trajectories[~trajectories.actions.is_dummy] = log_pf_trajectories_slice
 
             return log_pf_trajectories, log_pb_trajectories
@@ -175,7 +180,8 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
             # assert trajectories.states.is_sink_state[:-1].equal(trajectories.actions.is_dummy)
 
             if valid_states.batch_shape != tuple(valid_actions.batch_shape):
-                raise AssertionError("Something wrong happening with log_pf evaluations")
+                raise AssertionError(
+                    "Something wrong happening with log_pf evaluations")
 
             if self.on_policy:
                 log_pf_trajectories = trajectories.log_probs
@@ -193,7 +199,7 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
 
             non_initial_valid_states = valid_states[~valid_states.is_initial_state]
             non_exit_valid_actions = valid_actions[~valid_actions.is_exit]
-            
+
             module_output = self.pb(non_initial_valid_states)
             valid_log_pb_actions = self.pb.to_probability_distribution(
                 non_initial_valid_states, module_output
@@ -205,7 +211,8 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
                 dtype=torch.float,
             )
             log_pb_trajectories_slice = torch.full_like(
-                valid_actions.tensor[..., 0], fill_value=fill_value, dtype=torch.float
+                valid_actions.tensor[...,
+                                     0], fill_value=fill_value, dtype=torch.float
             )
             log_pb_trajectories_slice[~valid_actions.is_exit] = valid_log_pb_actions
             log_pb_trajectories[~trajectories.actions.is_dummy] = log_pb_trajectories_slice
@@ -221,13 +228,15 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
     ]:
         """Given a batch of trajectories, calculate forward & backward policy scores."""
         # log pf and log pb along traj: 15+15*96 + 2(special state)
-        log_pf_trajectories, log_pb_trajectories = self.get_pfs_and_pbs(trajectories)
+        log_pf_trajectories, log_pb_trajectories = self.get_pfs_and_pbs(
+            trajectories)
 
         assert log_pf_trajectories is not None
         total_log_pf_trajectories = log_pf_trajectories.sum(dim=0)
         total_log_pb_trajectories = log_pb_trajectories.sum(dim=0)
-        # reward info for supervising 
-        log_rewards = trajectories.log_rewards.clamp_min(self.log_reward_clip_min)  # type: ignore
+        # reward info for supervising
+        log_rewards = trajectories.log_rewards.clamp_min(
+            self.log_reward_clip_min)  # type: ignore
         if torch.any(torch.isinf(total_log_pf_trajectories)) or torch.any(
             torch.isinf(total_log_pb_trajectories)
         ):
