@@ -3,10 +3,10 @@ from typing import Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.containers import Trajectories, Transitions
-from gfn.env import Env
-from gfn.gflownet.base import PFBasedGFlowNet
-from gfn.modules import GFNModule, ScalarEstimator
+from src.gfn.containers import Trajectories, Transitions
+from src.gfn.env import Env
+from src.gfn.gflownet.base import PFBasedGFlowNet
+from src.gfn.modules import GFNModule, ScalarEstimator
 
 
 class DBGFlowNet(PFBasedGFlowNet):
@@ -23,7 +23,7 @@ class DBGFlowNet(PFBasedGFlowNet):
     Attributes:
         logF: a ScalarEstimator instance.
         on_policy: boolean indicating whether we need to reevaluate the log probs.
-        forward_looking: whether to implement the forward looking GFN loss.
+        forward_looking: whether to implement the forward looking src.gfn loss.
     """
 
     def __init__(
@@ -138,7 +138,7 @@ class ModifiedDBGFlowNet(PFBasedGFlowNet):
     """
 
     def get_scores(self, transitions: Transitions) -> TT["n_trajectories", torch.float]:
-        """DAG-GFN-style detailed balance, when all states are connected to the sink.
+        """DAG-src.gfn-style detailed balance, when all states are connected to the sink.
 
         Raises:
             ValueError: when backward transitions are supplied (not supported).

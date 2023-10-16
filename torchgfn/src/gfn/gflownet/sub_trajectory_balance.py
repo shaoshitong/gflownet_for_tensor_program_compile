@@ -3,10 +3,10 @@ from typing import List, Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.containers import Trajectories
-from gfn.env import Env
-from gfn.gflownet.base import TrajectoryBasedGFlowNet
-from gfn.modules import GFNModule, ScalarEstimator
+from src.gfn.containers import Trajectories
+from src.gfn.env import Env
+from src.gfn.gflownet.base import TrajectoryBasedGFlowNet
+from src.gfn.modules import GFNModule, ScalarEstimator
 
 
 class SubTBGFlowNet(TrajectoryBasedGFlowNet):

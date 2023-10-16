@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.env import DiscreteEnv
-from gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
-from gfn.states import DiscreteStates, States
+from src.gfn.actions import Actions
+from src.gfn.env import DiscreteEnv
+from src.gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
+from src.gfn.states import DiscreteStates, States
 
 import numpy as np
 from tvm.runtime import NDArray
@@ -175,13 +175,6 @@ class MetaScheduleEnv(DiscreteEnv):
                     self.backward_masks,
                 )
 
-                ''' 
-                    The setting of mask is relatively complicated here to realize the \
-                    blocking of inappropriate actions during sampling. The algorithm  \
-                    is modified from the discrete_edm environment, so most of the pra \
-                    ctices are identical to it.
-                '''
-
                 '''
                 # 1) Both forward and backward masks need to be separated according \
                 # to the different parts of the action. This refers to the three di \
@@ -191,69 +184,37 @@ class MetaScheduleEnv(DiscreteEnv):
                 # as it is not -1.
                 '''
 
-                ''' [..., ] Usage
-                >>> t
-                tensor([[1., 2., 3.],
-                        [0., 2., 4.]])
-                >>> t[..., 1]
-                tensor([2., 2.])
-                '''
-                ''' *() Usage
-                >>> t0 = [*(1, 0, 2), 0, 0, 1]
-                >>> t0
-                [1, 0, 2, 0, 0, 1]
-                '''
-                ''' tensor.expand() usage
-                >>> x = torch.tensor([[1], [2], [3]])
-                >>> x.size()
-                torch.Size([3, 1])
-                >>> x.expand(3, 4)
-                tensor([[ 1,  1,  1,  1],
-                        [ 2,  2,  2,  2],
-                        [ 3,  3,  3,  3]])
-                >>> x.expand(-1, 4)   # -1 means not changing the size of that dimension
-                tensor([[ 1,  1,  1,  1],
-                        [ 2,  2,  2,  2],
-                        [ 3,  3,  3,  3]])
-                >>> x = x[..., None]
-                >>> x.size()
-                torch.Size([3, 1, 1])
-                >>> x.expand(3, 4, 2).contiguous().view(-1, 4*2)
-                tensor([[1, 1, 1, 1, 1, 1, 1, 1],
-                        [2, 2, 2, 2, 2, 2, 2, 2],
-                        [3, 3, 3, 3, 3, 3, 3, 3]])
-                '''
                 act_low0 = env.one_hot_ndim*env.one_hot_seq_len
                 act_high0 = act_low0 + 2*env.binary_ndim*env.binary_seq_len
                 sta_low0 = env.one_hot_seq_len
-                # NOTE: forward mask is valid position flag (-1) for action considering according to prim type (in condition)
+                # NOTE: forward mask is valid position flag (-1) for action
                 # [..., None]: add new dim, [1, 2, 3] --> [[1], [2], [3]]
                 # expand(): convert one flag state into ndim action -- (15, ) --> (15, 10)
-                # view(): convert into one dim
+                # NOTE: for traj: (s0, s1, ... sf)
                 self.forward_masks[..., :act_low0] = \
                     (self.tensor[..., :sta_low0] == -1)[..., None].expand(*self.tensor.shape[:-1],
-                                                                          env.one_hot_seq_len, env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1], act_low0)
+                        env.one_hot_seq_len, env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1], act_low0)
 
                 self.forward_masks[..., act_low0:act_high0] = \
                     (self.tensor[..., sta_low0:] == -1)[..., None].expand(*self.tensor.shape[:-1],
-                                                                          env.binary_ndim*env.binary_seq_len, 2).contiguous().view(*self.tensor.shape[:-1], act_high0-act_low0)
+                        env.binary_ndim*env.binary_seq_len, 2).contiguous().view(*self.tensor.shape[:-1], act_high0-act_low0)
 
                 # 2) The last action is not a terminal state as long as one of the e \
                 # xistent states is -1.
                 # torch.all(input): test if all eles in input evaluate to True
-                self.forward_masks[..., -
-                                   1] = torch.all(self.tensor != -1, dim=-1)
+                self.forward_masks[..., -1] = torch.all(self.tensor != -1, dim=-1)
 
-                # 3) The case of backward's mask is more complex, and we need to emp \
+                r'''# 3) The case of backward's mask is more complex, and we need to emp \
                 # loy torch.scatter to insert executable markers at the appropriate  \
                 # index positions. Specifically, when there is a value other than -1 \
                 # in the previous one_hot_seq_len values, then there is an action th \
                 # at cannot be selected. Assuming that the action corresponds to pos \
                 # ition K of one_hot_seq_len, then it is computed as [K*one_hot_ndim \
                 # +action_value].
+                '''
 
                 # NOTE: backward mask is valid position flag (not -1)
-
+                # src: (16, 15) tar: (16, 150) or traj: (72, 16, 15) (72, 16, 150)
                 src = torch.full_like(
                     self.tensor[..., :env.one_hot_seq_len], fill_value=1, dtype=torch.bool, device=self.tensor.device)
                 tar = torch.zeros_like(
@@ -265,34 +226,11 @@ class MetaScheduleEnv(DiscreteEnv):
                     env.one_hot_seq_len, device=self.tensor.device) * env.one_hot_ndim)[None, ...]
                 mask = self.tensor[..., :env.one_hot_seq_len] >= 0
 
-                '''
-                >>> torch.nonzero(torch.tensor([1, 1, 1, 0, 1]))
-                tensor([[ 0],
-                        [ 1],
-                        [ 2],
-                        [ 4]])
-                >>> torch.nonzero(torch.tensor([[0.6, 0.0, 0.0, 0.0],
-                ...                             [0.0, 0.4, 0.0, 0.0],
-                ...                             [0.0, 0.0, 1.2, 0.0],
-                ...                             [0.0, 0.0, 0.0,-0.4]]))
-                tensor([[ 0,  0],
-                        [ 1,  1],
-                        [ 2,  2],
-                        [ 3,  3]])
-                >>> torch.nonzero(torch.tensor([1, 1, 1, 0, 1]), as_tuple=True)
-                (tensor([0, 1, 2, 4]),)
-                >>> torch.nonzero(torch.tensor([[0.6, 0.0, 0.0, 0.0],
-                ...                             [0.0, 0.4, 0.0, 0.0],
-                ...                             [0.0, 0.0, 1.2, 0.0],
-                ...                             [0.0, 0.0, 0.0,-0.4]]), as_tuple=True)
-                (tensor([0, 1, 2, 3]), tensor([0, 1, 2, 3]))
-                >>> torch.nonzero(torch.tensor(5), as_tuple=True)
-                (tensor([0]),)
-                '''
+
                 # Using advanced indexing instead of the double loop
                 # get pos of each nonzero: (tensor([0, 1, 2, 3]), tensor([0, 1, 2, 3]))
                 valid_indices = mask.nonzero(as_tuple=True)
-                # check if include batch dim
+                # NOTE: only set [0, 5, 2, 7] pos into True, rest is False
                 # tar[i,index[i,j]] = src[i,j]
                 if len(valid_indices) == 2:
                     # tuple + same shape tuple = cat(tuple, tuple) --
@@ -304,6 +242,7 @@ class MetaScheduleEnv(DiscreteEnv):
                         (index[valid_indices],)] = src[valid_indices]
                 self.backward_masks[..., :act_low0] = tar
 
+                r'''
                 # 4) In the final part dealing with binary encoding, a divide-and-co \
                 # nquer approach is typically adopted for states 0 and 1. Specifical \
                 # ly, the range [one_hot_ndim*one_hot_seq_len: one_hot_ndim*one_hot_ \
@@ -316,11 +255,13 @@ class MetaScheduleEnv(DiscreteEnv):
                 # alue with 0 and 1, respectively. Similarly, 2 and 3 denote filling \
                 # the 1st value with 0 and 1, and 5 and 6 signify filling the 2nd va \
                 # lue with 0 and 1.
+                '''
 
                 self.backward_masks[..., act_low0: act_high0:2] = \
                     self.tensor[..., env.one_hot_seq_len:] == 0
                 self.backward_masks[..., act_low0+1: act_high0:2] = \
                     self.tensor[..., env.one_hot_seq_len:] == 1
+                print(f"Finish update mask")
 
         return DiscreteMSStates
 
@@ -329,23 +270,60 @@ class MetaScheduleEnv(DiscreteEnv):
 
     # forward one step
     def maskless_step(
-        self, states: States, actions: Actions, info
+        self, states: States, actions: Actions, dones
     ) -> TT["batch_shape", "state_shape", torch.float]:
 
         # 1) Select the first [0-one_hot_ndim*one_hot_seq_len-1] action to \
         # Update. Due to states.tensor[0:one_hot_seq_len-1] is defined as  \
         # one-hot vector, we should first calcuate the index_0 and then    \
         # employ the 'scatter' operation to update state.
+
+        # # shape: (16) (16, 7) (16, 15) (16, 30, 34) (16, 3)
+        # databases_path, decode, order, cond, ptr, target = info
+
+        # cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = torch.split(
+        #     decode, split_size_or_sections=1, dim=1)
+
+        # ex_cond0, ex_cond1 = torch.split(
+        #     cond, split_size_or_sections=15, dim=1)  # split along 1dim
+        # cond0 = []
+        # cond1 = []
+        # for i in range(cond_x0.shape[0]):
+        #     t0, _ = torch.split(
+        #         ex_cond0[i], [cond_x0[i].item(), 15-cond_x0[i].item()], 0)
+        #     t1, _ = torch.split(
+        #         ex_cond1[i], [cond_x1[i].item(), 15-cond_x1[i].item()], 0)
+
+        #     t0, _ = torch.split(
+        #         t0, [cond_y0[i].item(), 34-cond_y0[i].item()], 1)
+        #     t1, _ = torch.split(
+        #         t1, [cond_y1[i].item(), 34-cond_y1[i].item()], 1)
+        #     cond0.append(t0)
+        #     cond1.append(t1)
+
+        # cond0 = torch.stack(cond0, 0)
+        # cond1 = torch.stack(cond1, 0)
+        # old_len0 = old_len1 = 0
+        # if cond0.shape[1] > 0:
+        #     old_len0 = cond0[..., 3]
+        # if cond1.shape[1] > 0:
+        #     old_len1 = cond1[..., 3]
+        if actions.tensor.shape[0] == 0:
+            return states.tensor
         
-        databases_path, decode, order, cond, ptr, target = info
-        
-        mask_0 = (actions.tensor < self.one_hot_ndim *
-                  self.one_hot_seq_len).squeeze(-1)
+        len0 = self.one_hot_ndim*self.one_hot_seq_len
+        len1 = len0 + 2*self.binary_ndim*self.binary_seq_len
+
+        # NOTE: first 15 items if action < 150:  (16, 1)
+        mask_0 = (actions.tensor < len0).squeeze(-1)
+        mask_0 = mask_0&~dones
+        # index0 for first 15 items (16, 1)
         index_0 = (actions.tensor / self.one_hot_ndim).long()
-        # fmod() 取余
+        # fmod() 取余, value for first 15 items (16, 1)
         value_0 = torch.fmod(actions.tensor, self.one_hot_ndim).long()
+        # only first 3 is -1 (forward valid), rest is 0 (init zeros)
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
-            # Set indices to value_0[mask_0].
+            # Set indices to value_0[mask_0] in last dim
             -1, index_0[mask_0], value_0[mask_0]
         )
 
@@ -353,14 +331,12 @@ class MetaScheduleEnv(DiscreteEnv):
         # date. We can denote it as one-hot vector with length=2. Besed on \
         # this, we can do the same operation as above.
 
-        mask_1 = (actions.tensor >= self.one_hot_ndim*self.one_hot_seq_len) & \
-            (actions.tensor < self.one_hot_ndim*self.one_hot_seq_len +
-             2*self.binary_ndim*self.binary_seq_len)
+        mask_1 = (actions.tensor >= len0) & (actions.tensor < len1)
         mask_1 = mask_1.squeeze(-1)
-        index_1 = (((actions.tensor - self.one_hot_ndim *
-                   self.one_hot_seq_len) / 2).int() + self.one_hot_seq_len).long()
-        value_1 = torch.fmod(
-            actions.tensor - self.one_hot_ndim*self.one_hot_seq_len, 2).long()
+        mask_1 = mask_1&~dones
+        index_1 = (((actions.tensor - len0) / 2).int() +
+                   self.one_hot_seq_len).long()
+        value_1 = torch.fmod(actions.tensor - len0, 2).long()
         states.tensor[mask_1] = states.tensor[mask_1].scatter(
             # Set indices to value_1[mask1].
             -1, index_1[mask_1], value_1[mask_1]
@@ -368,7 +344,7 @@ class MetaScheduleEnv(DiscreteEnv):
         return states.tensor
 
     def maskless_backward_step(
-        self, states: States, actions: Actions, info
+        self, states: States, actions: Actions, dones
     ) -> TT["batch_shape", "state_shape", torch.float]:
 
         # In this environment, states are represented as n-dimensional ve \
@@ -389,10 +365,15 @@ class MetaScheduleEnv(DiscreteEnv):
         # Update. Due to states.tensor[0:one_hot_seq_len-1] is defined as  \
         # one-hot vector, we should first calcuate the index_0 and then    \
         # employ the 'scatter' operation to update state.
-        databases_path, decode, order, cond, ptr, target = info
+        # databases_path, decode, order, cond, ptr, target = info
+        if actions.tensor.shape[0] == 0:
+            return states.tensor
+        
+        len0 = self.one_hot_ndim*self.one_hot_seq_len
+        len1 = len0 + 2*self.binary_ndim*self.binary_seq_len
 
-        mask_0 = (actions.tensor < self.one_hot_ndim *
-                  self.one_hot_seq_len).squeeze(-1)
+        mask_0 = (actions.tensor < len0).squeeze(-1)
+        mask_0 = mask_0&~dones
         index_0 = (actions.tensor / self.one_hot_ndim).long()
         value_0 = -1
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
@@ -403,12 +384,11 @@ class MetaScheduleEnv(DiscreteEnv):
         # date. We can denote it as one-hot vector with length=2. Besed on \
         # this, we can do the same operation as above.
 
-        mask_1 = (actions.tensor >= self.one_hot_ndim*self.one_hot_seq_len) & \
-            (actions.tensor < self.one_hot_ndim*self.one_hot_seq_len +
-             2*self.binary_ndim*self.binary_seq_len)
+        mask_1 = (actions.tensor >= len0) & (actions.tensor < len1)
         mask_1 = mask_1.squeeze(-1)
-        index_1 = (((actions.tensor - self.one_hot_ndim *
-                   self.one_hot_seq_len) / 2).int() + self.one_hot_seq_len).long()
+        mask_1 = mask_1&~dones
+        index_1 = (((actions.tensor - len0) / 2).int() +
+                   self.one_hot_seq_len).long()
         value_1 = -1
         states.tensor[mask_1] = states.tensor[mask_1].scatter(
             -1, index_1[mask_1], value_1  # Set indices to -1.
@@ -446,9 +426,10 @@ class MetaScheduleEnv(DiscreteEnv):
         info = tuple([x])
 
         info += infos
-
+        # As diff len for each traj, len(features) is diff
         features = restore_embedding(info)
-        # print(f"features = {features}")
+        # print(f"len of features = {len(features)}")
+        # print(f"features = {features[0]}")
         # NOTE: This is for speed up predict!
         val_dataloader = SegmentDataloder_new(
             features, shuffle=False, batch_size=x.shape[0]
@@ -457,11 +438,16 @@ class MetaScheduleEnv(DiscreteEnv):
         for batch_data, _ in val_dataloader:
             batch_data = batch_data.to(self.device)
             outputs = self.energy(batch_data)
-            pred_results.extend(outputs.detach().cpu().numpy())
+            if len(pred_results) > 0:
+                pred_results += outputs.detach().cpu().tolist()
+            else:
+                pred_results = outputs.detach().cpu().tolist()
 
         res = torch.from_numpy(np.array(pred_results)).to(self.device)
+        res = res.to(torch.float32)
         print(f"res = {res}")
-        return -self.alpha * res.clone().detach().view(-1), features
+        # print(f"len of res = {res.shape}")
+        return -self.alpha * res.clone().detach().view(-1), res
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
     #     """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""

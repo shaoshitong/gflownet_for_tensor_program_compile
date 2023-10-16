@@ -7,11 +7,11 @@ import torch
 from einops import rearrange
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.env import DiscreteEnv
-from gfn.gym.helpers.preprocessors import KHotPreprocessor, OneHotPreprocessor
-from gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
-from gfn.states import DiscreteStates
+from src.gfn.actions import Actions
+from src.gfn.env import DiscreteEnv
+from src.gfn.gym.helpers.preprocessors import KHotPreprocessor, OneHotPreprocessor
+from src.gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
+from src.gfn.states import DiscreteStates
 
 
 class HyperGrid(DiscreteEnv):

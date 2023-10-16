@@ -5,8 +5,8 @@ from einops import rearrange
 from torch.nn.functional import one_hot
 from torchtyping import TensorType as TT
 
-from gfn.preprocessors import Preprocessor
-from gfn.states import States
+from src.gfn.preprocessors import Preprocessor
+from src.gfn.states import States
 
 
 class OneHotPreprocessor(Preprocessor):

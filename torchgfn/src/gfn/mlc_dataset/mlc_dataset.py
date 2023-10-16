@@ -257,8 +257,14 @@ def restore_embedding(decode_info):
             # NOTE: bug1 must assign to sub_trace
             sub_trace = sub_trace.with_decision(
                 new_sub_inst, new_sub_decision, True)
+        nn = len(list(sub_trace.decisions.values()))
+        if nn > 2:
+            print(f"Encounter new condition in {candidate_path}!")
 
-        print(f"After decision = {list(sub_trace.decisions.values())}")
+            # print(f"res = {res}")
+        print(f"old decision = {list(sub_decisions.values())}")
+        print(f"new decisions = {new_sub_decisions}")
+        
         from tvm.meta_schedule.database.database import TuningRecord
 
         new_database = database
@@ -274,6 +280,7 @@ def restore_embedding(decode_info):
         # print("records shape = ", len(records))
         # NOTE: commit add new candidates in json
         record = records[-1]
+        # NOTE: n=3, but decision=4
         candidate = record.as_measure_candidate()
         context = TuneContext(mod=record.workload.mod, target=Target(target))
         # TODO: check same context

@@ -3,15 +3,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-    from gfn.actions import Actions
-    from gfn.env import Env
-    from gfn.states import States
+    from src.gfn.actions import Actions
+    from src.gfn.env import Env
+    from src.gfn.states import States
 
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.containers.base import Container
-from gfn.containers.transitions import Transitions
+from src.gfn.containers.base import Container
+from src.gfn.containers.transitions import Transitions
 
 
 # TODO: remove env from this class?
@@ -47,7 +47,8 @@ class Trajectories(Container):
         is_backward: bool = False,
         log_rewards=None,
         log_probs=None,
-        features=None,
+        res=None,
+        start_state = None,
     ) -> None:
         """
         Args:
@@ -63,7 +64,8 @@ class Trajectories(Container):
         that can be populated on the fly. If log_rewards is None, then `env.log_reward`
         is used to compute the rewards, at each call of self.log_rewards
         """
-        self.features = features
+        self.res = res
+        self.start_state = start_state
         self.env = env
         self.is_backward = is_backward
         self.states = (

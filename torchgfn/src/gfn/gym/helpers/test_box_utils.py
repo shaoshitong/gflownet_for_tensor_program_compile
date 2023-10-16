@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from gfn.gym import Box
-from gfn.gym.helpers.box_utils import (
+from src.gfn.gym import Box
+from src.gfn.gym.helpers.box_utils import (
     BoxPBEstimator,
     BoxPBNeuralNet,
     BoxPFEstimator,

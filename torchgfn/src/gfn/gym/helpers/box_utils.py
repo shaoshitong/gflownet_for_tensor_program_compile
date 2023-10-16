@@ -6,10 +6,10 @@ import torch
 from torch.distributions import Beta, Categorical, Distribution, MixtureSameFamily
 from torchtyping import TensorType as TT
 
-from gfn.gym import Box
-from gfn.modules import GFNModule
-from gfn.states import States
-from gfn.utils import NeuralNet
+from src.gfn.gym import Box
+from src.gfn.modules import GFNModule
+from src.gfn.states import States
+from src.gfn.utils import NeuralNet
 
 PI_2_INV = 2.0 / torch.pi
 PI_2 = torch.pi / 2.0
@@ -24,7 +24,7 @@ class QuarterCircle(Distribution):
     When a state is of norm <= delta, and northeastern=False, then the distribution is a Dirac at the
     state (i.e. the only possible parent is s_0).
 
-    Adapted from https://github.com/saleml/continuous-gfn/blob/master/sampling.py
+    Adapted from https://github.com/saleml/continuous-src.gfn/blob/master/sampling.py
 
     This is useful for the `Box` environment.
     """
@@ -209,7 +209,7 @@ class QuarterDisk(Distribution):
     """Represents a distribution on the northeastern quarter disk centered at (0, 0) of maximal radius delta.
     The radius and the angle follow Mixture of Betas distributions.
 
-    Adapted from https://github.com/saleml/continuous-gfn/blob/master/sampling.py
+    Adapted from https://github.com/saleml/continuous-src.gfn/blob/master/sampling.py
 
     This is useful for the `Box` environment
     """

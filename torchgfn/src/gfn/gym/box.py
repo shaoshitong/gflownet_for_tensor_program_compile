@@ -4,9 +4,9 @@ from typing import ClassVar, Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.env import Env
-from gfn.states import States
+from src.gfn.actions import Actions
+from src.gfn.env import Env
+from src.gfn.states import States
 
 
 class Box(Env):

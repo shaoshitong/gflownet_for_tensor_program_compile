@@ -3,12 +3,12 @@ from typing import Tuple
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.containers import Trajectories
-from gfn.env import Env
-from gfn.gflownet.base import GFlowNet
-from gfn.modules import DiscretePolicyEstimator
-from gfn.samplers import Sampler
-from gfn.states import DiscreteStates
+from src.gfn.containers import Trajectories
+from src.gfn.env import Env
+from src.gfn.gflownet.base import GFlowNet
+from src.gfn.modules import DiscretePolicyEstimator
+from src.gfn.samplers import Sampler
+from src.gfn.states import DiscreteStates
 
 
 class FMGFlowNet(GFlowNet):

@@ -3,12 +3,12 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from gfn.containers.trajectories import Trajectories
-from gfn.containers.transitions import Transitions
+from src.gfn.containers.trajectories import Trajectories
+from src.gfn.containers.transitions import Transitions
 
 if TYPE_CHECKING:
-    from gfn.env import Env
-    from gfn.states import States
+    from src.gfn.env import Env
+    from src.gfn.states import States
 
 
 class ReplayBuffer:

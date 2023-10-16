@@ -5,9 +5,9 @@ from typing import Optional, Tuple, Union
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.preprocessors import IdentityPreprocessor, Preprocessor
-from gfn.states import DiscreteStates, States
+from src.gfn.actions import Actions
+from src.gfn.preprocessors import IdentityPreprocessor, Preprocessor
+from src.gfn.states import DiscreteStates, States
 
 # Errors
 NonValidActionsError = type("NonValidActionsError", (ValueError,), {})
@@ -126,7 +126,7 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
-        info
+        dones
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating sink states in the new batch."""
@@ -148,7 +148,7 @@ class Env(ABC):
         not_done_actions = actions[~new_sink_states_idx]
 
         new_not_done_states_tensor = self.maskless_step(
-            not_done_states, not_done_actions, info
+            not_done_states, not_done_actions, dones
         )
         # if isinstance(new_states, DiscreteStates):
         #     new_not_done_states.masks = self.update_masks(not_done_states, not_done_actions)
@@ -161,7 +161,7 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
-        info,
+        dones,
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating initial states in the new batch."""
@@ -178,7 +178,7 @@ class Env(ABC):
 
         # Calculate the backward step, and update only the states which are not Done.
         new_not_done_states_tensor = self.maskless_backward_step(
-            valid_states, valid_actions, info
+            valid_states, valid_actions, dones
         )
         new_states.tensor[valid_states_idx] = new_not_done_states_tensor
 
@@ -252,18 +252,18 @@ class DiscreteEnv(Env, ABC):
         self,
         states: DiscreteStates,
         actions: Actions,
-        info,
+        dones,
     ) -> States:
-        new_states = super().step(states, actions, info)
+        new_states = super().step(states, actions, dones)
         new_states.update_masks()
         return new_states
     def backward_step(
         self,
         states: DiscreteStates,
         actions: Actions,
-        info,
+        dones,
     ) -> States:
-        new_states = super().backward_step(states, actions, info)
+        new_states = super().backward_step(states, actions, dones)
         new_states.update_masks()
         return new_states
     

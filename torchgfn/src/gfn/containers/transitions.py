@@ -6,11 +6,11 @@ import torch
 from torchtyping import TensorType as TT
 
 if TYPE_CHECKING:
-    from gfn.actions import Actions
-    from gfn.env import Env
-    from gfn.states import States
+    from src.gfn.actions import Actions
+    from src.gfn.env import Env
+    from src.gfn.states import States
 
-from gfn.containers.base import Container
+from src.gfn.containers.base import Container
 
 
 class Transitions(Container):

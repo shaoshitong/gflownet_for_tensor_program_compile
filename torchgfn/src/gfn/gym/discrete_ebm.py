@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 from torchtyping import TensorType as TT
 
-from gfn.actions import Actions
-from gfn.env import DiscreteEnv
-from gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
-from gfn.states import DiscreteStates, States
+from src.gfn.actions import Actions
+from src.gfn.env import DiscreteEnv
+from src.gfn.preprocessors import EnumPreprocessor, IdentityPreprocessor
+from src.gfn.states import DiscreteStates, States
 
 
 class EnergyFunction(nn.Module, ABC):

@@ -165,11 +165,6 @@ if __name__ == "__main__":
             # data_num: 3191
             begin = (step*bs) % data_num
             end = (step*bs+bs) % data_num
-            # np.savez(os.path.join(info_path, f'info{step}.npz'), x=x[0], database=databases[begin+0],
-            #          decode=decode[0], order=order[0],  cond=cond[0], ptr=ptr[0], target=target)
-            # np.savez(os.path.join(info_path, f'info{step}.npz'), decode=decode,
-            #          order=order, last_embedding=x, last_condition=cond,
-            #          last_ptr_list=ptr, run_secs=score)
 
             x = x.cuda(non_blocking=True).long()
             # Convert into [batch, -1]
@@ -186,6 +181,9 @@ if __name__ == "__main__":
             candidate_paths = [workload_path.replace(
                 "workloads", "candidates") for workload_path in workload_paths]
             num = len(candidate_paths)
+            # for i in range(num):
+            #     print(f"workload = {workload_paths[i]}, candidate = {candidate_paths[i]}")
+            
             # NOTE: not use sorted()
             databases_path = [(workload_paths[i], candidate_paths[i])
                               for i in range(num)]
@@ -244,18 +242,18 @@ if __name__ == "__main__":
                 f"Sample backward trajectory! reward = {torch.exp(b_trajectories.log_rewards).mean().item()}")
             features_f = f_trajectories.features
             features_b = b_trajectories.features
-            for id in range(bs):
-                # forward != backward features
-                print(
-                    f"forward VS backward features = { torch.nonzero(torch.from_numpy(features_f[id] != features_b[id]))}")
-                # forward == pre forward features (same decode info)
-                if pre_f != None:
-                    print(
-                        f"forward VS pre features = {torch.nonzero(torch.from_numpy(features_f[id] != pre_f[id]))}")
-                # backward != pre backward features
-                if pre_b != None:
-                    print(
-                        f"backward VS pre features = {torch.nonzero(torch.from_numpy(features_b[id] != pre_b[id]))}")
+            # for id in range(bs):
+            #     # forward != backward features
+            #     print(
+            #         f"forward VS backward features = { torch.nonzero(torch.from_numpy(features_f[id] != features_b[id]))}")
+            #     # forward == pre forward features (same decode info)
+            #     if pre_f != None:
+            #         print(
+            #             f"forward VS pre features = {torch.nonzero(torch.from_numpy(features_f[id] != pre_f[id]))}")
+            #     # backward != pre backward features
+            #     if pre_b != None:
+            #         print(
+            #             f"backward VS pre features = {torch.nonzero(torch.from_numpy(features_b[id] != pre_b[id]))}")
 
             pre_f = f_trajectories.features
             pre_b = b_trajectories.features

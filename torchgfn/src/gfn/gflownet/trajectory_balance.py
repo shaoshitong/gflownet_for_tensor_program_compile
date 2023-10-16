@@ -7,10 +7,10 @@ import torch
 import torch.nn as nn
 from torchtyping import TensorType as TT
 
-from gfn.containers import Trajectories
-from gfn.env import Env
-from gfn.gflownet.base import TrajectoryBasedGFlowNet
-from gfn.modules import GFNModule
+from src.gfn.containers import Trajectories
+from src.gfn.env import Env
+from src.gfn.gflownet.base import TrajectoryBasedGFlowNet
+from src.gfn.modules import GFNModule
 
 
 class TBGFlowNet(TrajectoryBasedGFlowNet):

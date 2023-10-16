@@ -4,10 +4,10 @@ from typing import Dict, Optional
 import torch
 from torchtyping import TensorType as TT
 
-from gfn.containers import Trajectories, Transitions
-from gfn.env import Env
-from gfn.gflownet import GFlowNet, TBGFlowNet
-from gfn.states import States
+from src.gfn.containers import Trajectories, Transitions
+from src.gfn.env import Env
+from src.gfn.gflownet import GFlowNet, TBGFlowNet
+from src.gfn.states import States
 
 
 def get_terminating_state_dist_pmf(env: Env, states: States) -> TT["n_states", float]:
