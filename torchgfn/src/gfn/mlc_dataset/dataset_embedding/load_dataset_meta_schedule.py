@@ -38,8 +38,8 @@ def load_workload_and_candidate(workload_path, candidate_path):
 
 
 def search_all_files(work_dir):
-    workload_files = sorted(glob.glob(os.path.join(
-        work_dir, "**/*_workload.json"), recursive=True))
+    workload_files = glob.glob(os.path.join(
+        work_dir, "**/*_workload.json"), recursive=True)
     results = []
     for workload_file in workload_files:
         candidate_file = workload_file.replace(

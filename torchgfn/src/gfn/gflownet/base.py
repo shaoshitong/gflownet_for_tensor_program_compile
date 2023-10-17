@@ -69,10 +69,10 @@ class PFBasedGFlowNet(GFlowNet):
         self.pb = pb
         self.on_policy = on_policy
 
-    def sample_trajectories(self, env: Env, n_samples: int) -> Trajectories:
+    def sample_trajectories(self, env: Env, n_samples: int, info=None) -> Trajectories:
         sampler = Sampler(estimator=self.pf)
         trajectories = sampler.sample_trajectories(
-            env, n_trajectories=n_samples)
+            env, n_trajectories=n_samples, info=info)
         return trajectories
 
 
@@ -303,8 +303,14 @@ class TrajectoryBasedGFlowNet(PFBasedGFlowNet):
         total_log_pf_trajectories = log_pf_trajectories.sum(dim=0)
         total_log_pb_trajectories = log_pb_trajectories.sum(dim=0)
         # reward info for supervising
-        log_rewards = trajectories.log_rewards.clamp_min(
-            self.log_reward_clip_min)  # type: ignore
+        # print(f"In get_traj_score, reward = {trajectories.log_rewards}")
+        # log_rewards = trajectories.log_rewards.clamp_min(
+        #     self.log_reward_clip_min)  # type: ignore
+        # log_rewards = trajectories.log_rewards.clamp_min(
+        #     -5000)  # type: ignore
+        log_rewards = trajectories.log_rewards
+        # print(f"In get_traj_score, reward = {log_rewards}")
+
         if torch.any(torch.isinf(total_log_pf_trajectories)) or torch.any(
             torch.isinf(total_log_pb_trajectories)
         ):

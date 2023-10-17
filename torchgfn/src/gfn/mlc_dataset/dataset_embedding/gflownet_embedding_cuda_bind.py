@@ -95,11 +95,19 @@ class EmbeddingCUDABind:
             elif EmbeddingCUDABind.is_thread_binding_by_sample(sub_inst, sampled_split_insts):
                 bind_insts.append(sub_inst)
 
+        bind_insts = list(set(bind_insts))
+        insts = []
         for bind_inst in bind_insts:
             loop_rv = bind_inst.inputs[0]
             split_inst = sampled_split_insts[loop_rv]
             expr_rv = split_inst.inputs[2]
             sample_inst = sample_insts[expr_rv]
+
+            if len(insts) > 0 and sample_inst in insts:
+                # print(f"repeat inst for {sample_inst}")
+                continue
+            insts.append(sample_inst)
+
             decision = decisions[sample_inst].value
             probs = [i.value for i in sample_inst.attrs[1]]
             values = [i.value for i in sample_inst.attrs[0]]
@@ -142,12 +150,19 @@ class EmbeddingCUDABind:
                 sampled_split_insts[var_rv] = sub_inst
             elif EmbeddingCUDABind.is_thread_binding_by_sample(sub_inst, sampled_split_insts):
                 bind_insts.append(sub_inst)
-
+                
+        insts = []
         for bind_inst in bind_insts:
             loop_rv = bind_inst.inputs[0]
             split_inst = sampled_split_insts[loop_rv]
             expr_rv = split_inst.inputs[2]
             sample_inst = sample_insts[expr_rv]
+            
+            if len(insts) > 0 and sample_inst in insts:
+                # print(f"repeat inst for {sample_inst}")
+                continue
+            insts.append(sample_inst)
+
             one_hot = embedding_results[count_ptr]
             count_ptr += 1
             new_value = np.argmax(one_hot)

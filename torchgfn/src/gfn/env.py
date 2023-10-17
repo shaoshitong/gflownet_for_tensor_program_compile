@@ -126,7 +126,8 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
-        dones
+        dones=None,
+        info=None,
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating sink states in the new batch."""
@@ -150,10 +151,10 @@ class Env(ABC):
         new_not_done_states_tensor = self.maskless_step(
             not_done_states, not_done_actions, dones
         )
-        # if isinstance(new_states, DiscreteStates):
-        #     new_not_done_states.masks = self.update_masks(not_done_states, not_done_actions)
 
         new_states.tensor[~new_sink_states_idx] = new_not_done_states_tensor
+        # if isinstance(new_states, DiscreteStates):
+        #     new_states.update_masks(info)
 
         return new_states
 
@@ -161,7 +162,8 @@ class Env(ABC):
         self,
         states: States,
         actions: Actions,
-        dones,
+        dones=None,
+        info=None,
     ) -> States:
         """Function that takes a batch of states and actions and returns a batch of next
         states and a boolean tensor indicating initial states in the new batch."""
@@ -182,8 +184,8 @@ class Env(ABC):
         )
         new_states.tensor[valid_states_idx] = new_not_done_states_tensor
 
-        if isinstance(new_states, DiscreteStates):
-            new_states.update_masks()
+        # if isinstance(new_states, DiscreteStates):
+        #     new_states.update_masks(info)
 
         return new_states
 
@@ -252,21 +254,24 @@ class DiscreteEnv(Env, ABC):
         self,
         states: DiscreteStates,
         actions: Actions,
-        dones,
+        dones = None,
+        info=None,
     ) -> States:
-        new_states = super().step(states, actions, dones)
-        new_states.update_masks()
+        new_states = super().step(states, actions, dones, info)
+        new_states.update_masks(info)
         return new_states
+
     def backward_step(
         self,
         states: DiscreteStates,
         actions: Actions,
-        dones,
+        dones=None,
+        info=None,
     ) -> States:
-        new_states = super().backward_step(states, actions, dones)
-        new_states.update_masks()
+        new_states = super().backward_step(states, actions, dones, info)
+        new_states.update_masks(info)
         return new_states
-    
+
     def get_states_indices(
         self, states: DiscreteStates
     ) -> TT["batch_shape", torch.long]:

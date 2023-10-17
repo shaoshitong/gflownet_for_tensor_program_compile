@@ -71,7 +71,7 @@ def extract_features(
 class tlpCostModel(PyCostModel):
     # NOTE: cuda:7 is corresponding to 
     # def __init__(self, *, device='cuda:0') -> None:
-    def __init__(self, *, device='cuda:7') -> None:
+    def __init__(self, *, device='cuda') -> None:
         super().__init__()
         # print("----------------------------Enter __init__ func")
         self.device = device
@@ -81,12 +81,12 @@ class tlpCostModel(PyCostModel):
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
         # NOTE: update relative path to tlp model
-    def load(self, path: str = "/root/kongdehao/model/median_tlp/save_model_v2/tlp_model_14.pkl") -> None:
+    def load(self, path: str = "/root/kongdehao/model/min_tlp/tlp_model_73.pth") -> None:
     # def load(self, path: str = "/root/kongdehao/model/tlp/tlp_model_73.pth") -> None:
-        # self.model = torch.load(path, map_location=self.device)
-        with open(path, 'rb') as f:
-            self.model = pickle.load(f)  
-        self.model.to(self.device)
+        self.model = torch.load(path, map_location=self.device)
+        # with open(path, 'rb') as f:
+        #     self.model = pickle.load(f)  
+        # self.model.to(self.device)
           
     def save(self, path: str) -> None:
         pass
@@ -112,4 +112,5 @@ class tlpCostModel(PyCostModel):
             batch_data = batch_data.to(self.device)
             outputs = self.model(batch_data)
             pred_results.extend(outputs.detach().cpu().numpy())
+        print(f"TLP prediction = {pred_results}")
         return pred_results

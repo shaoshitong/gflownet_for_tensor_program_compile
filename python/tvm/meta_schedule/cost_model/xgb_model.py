@@ -93,11 +93,13 @@ class PackSum:
 
         repeats = [x.shape[0] for x in xs]
         xs = np.concatenate(xs, axis=0)
-        self.ids = np.concatenate([[i] * repeat for i, repeat in enumerate(repeats)], axis=0)
+        self.ids = np.concatenate(
+            [[i] * repeat for i, repeat in enumerate(repeats)], axis=0)
         if ys is None:
             self.dmatrix = xgb.DMatrix(data=xs, label=None)
         else:
-            ys = np.concatenate([[y] * repeat for y, repeat in zip(ys, repeats)], axis=0)
+            ys = np.concatenate(
+                [[y] * repeat for y, repeat in zip(ys, repeats)], axis=0)
             self.dmatrix = xgb.DMatrix(data=xs, label=ys)
             self.dmatrix.set_weight(ys)
 
@@ -189,8 +191,10 @@ class PackSum:
             The score of the metric
         """
         ys = self.dmatrix.get_label()  # type: ignore # pylint: disable=invalid-name
-        ys = self.predict_with_score(ys)  # type: ignore # pylint: disable=invalid-name
-        ys = ys / np.unique(self.ids, return_counts=True)[1]  # type: ignore # pylint: disable=invalid-name
+        # type: ignore # pylint: disable=invalid-name
+        ys = self.predict_with_score(ys)
+        # type: ignore # pylint: disable=invalid-name
+        ys = ys / np.unique(self.ids, return_counts=True)[1]
         ys_pred = self.predict_with_score(ys_pred)
         trials = np.argsort(ys_pred)[::-1][:n]
         trial_scores = ys[trials]
@@ -478,8 +482,10 @@ class XGBModel(PyCostModel):
                 return 1e10
             return float(np.median([float(s) for s in x.run_secs]))
 
-        new_features = [_feature(x) for x in self.extractor.extract_from(context, candidates)]
-        new_mean_costs = np.array([_mean_cost(x) for x in results]).astype("float32")
+        new_features = [
+            _feature(x) for x in self.extractor.extract_from(context, candidates)]
+        new_mean_costs = np.array([_mean_cost(x)
+                                  for x in results]).astype("float32")
 
         # Steps 3. Run validation
         if group is not None and self.booster is not None:
@@ -517,7 +523,8 @@ class XGBModel(PyCostModel):
 
         # Step 5. Re-train the model
         self._train(
-            xs=list(itertools_chain.from_iterable([g.features for g in self.data.values()])),
+            xs=list(itertools_chain.from_iterable(
+                [g.features for g in self.data.values()])),
             ys=np.concatenate(
                 [g.min_cost / g.costs for g in self.data.values()],
                 axis=0,
@@ -559,6 +566,7 @@ class XGBModel(PyCostModel):
                 high=1,
                 size=(len(candidates),),
             )
+        print(f"XGB predict = {ret}")
         return ret.astype("float64")
 
     def _train(  # type: ignore # pylint: disable=invalid-name
@@ -570,13 +578,16 @@ class XGBModel(PyCostModel):
 
         self.d_train = PackSum(xs=xs, ys=ys)
 
-        def obj(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):  # type: ignore # pylint: disable = unused-argument
+        # type: ignore # pylint: disable = unused-argument
+        def obj(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):
             return self.d_train.obj_square_error(ys_pred)
 
-        def rmse(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):  # type: ignore # pylint: disable = unused-argument
+        # type: ignore # pylint: disable = unused-argument
+        def rmse(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):
             return self.d_train.rmse(ys_pred)
 
-        def avg_peak_score(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):  # type: ignore # pylint: disable = unused-argument
+        # type: ignore # pylint: disable = unused-argument
+        def avg_peak_score(ys_pred: np.ndarray, d_train: "xgb.DMatrix"):
             return self.d_train.average_peak_score(ys_pred, self.average_peak_n)
 
         self.booster = xgb.train(
@@ -708,10 +719,12 @@ def _get_custom_call_back(
                 return
             if booster.attr("best_score") is not None:
                 self.state["best_score"] = float(booster.attr("best_score"))
-                self.state["best_iteration"] = int(booster.attr("best_iteration"))
+                self.state["best_iteration"] = int(
+                    booster.attr("best_iteration"))
                 self.state["best_msg"] = booster.attr("best_msg")
             else:
-                booster.set_attr(best_iteration=str(self.state["best_iteration"]))
+                booster.set_attr(best_iteration=str(
+                    self.state["best_iteration"]))
                 booster.set_attr(best_score=str(self.state["best_score"]))
 
         def after_iteration(

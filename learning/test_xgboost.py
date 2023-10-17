@@ -53,9 +53,9 @@ for i in range(epoch):
         task_name="main",
     )
     sch = ms.tir_integration.compile_tir(database, MyModule, target)
-    a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
-    b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"))
-    c_nd = tvm.nd.empty((128, 128), "float32")
+    a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"), device=tvm.cuda())
+    b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"), device=tvm.cuda())
+    c_nd = tvm.nd.empty((128, 128), "float32", device=tvm.cuda())
     # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
     lib = tvm.build(sch.mod, target="cuda")
     # lib = tvm.build(sch.mod, target=target)

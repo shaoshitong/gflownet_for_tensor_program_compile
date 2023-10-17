@@ -55,7 +55,7 @@ class TBGFlowNet(TrajectoryBasedGFlowNet):
         log_reward = (- scores + pf - pb).mean()
         pf = pf.mean()
         pb = pb.mean()
-        # print("pf:",pf,"pb:",pb,"log_reward:",log_reward,"logZ:",self.logZ)
+        print("pf:",pf.item(),"pb:",pb.item(),"log_reward:",log_reward.item(),"logZ:",self.logZ.item())
         loss = (scores + self.logZ).pow(2).mean()
         if torch.isnan(loss):
             raise ValueError("loss is nan")

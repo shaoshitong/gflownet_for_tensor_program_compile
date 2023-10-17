@@ -29,45 +29,55 @@ if __name__ == "__main__":
     from tvm.tir.schedule import InstructionKind
     from dataset_embedding import deep_copy_map
     max_value = 0
+    flag = True
     for database in databases:
-        records = database.get_all_tuning_records()
-        for record in records:
-            sub_sch = record.as_measure_candidate().sch
-            # trace include instructions & decisions
-            sub_trace = sub_sch.trace
-            # instructions include deterministic and stochastic
-            sub_insts = sub_trace.insts
-            # decision only include stochastic instructions
-            sub_decisions = sub_trace.decisions
+        if flag:
+            records = database.get_all_tuning_records()
+            for record in records:
+                sub_sch = record.as_measure_candidate().sch
+                # trace include instructions & decisions
+                sub_trace = sub_sch.trace
+                # instructions include deterministic and stochastic
+                sub_insts = sub_trace.insts
+                # decision only include stochastic instructions
+                sub_decisions = sub_trace.decisions
 
-            AA = (list(deep_copy_map(sub_trace.decisions).values()))
-            from tvm.tir.schedule import InstructionKind
-            gm = GflowNetEmbedding()
-            # True: encode()
-            embedding_results, embedding_conditions, count_ptr_list = gm(
-                sub_insts, sub_decisions, True)
-            # Now, disturb the decision's value
+                AA = (list(deep_copy_map(sub_trace.decisions).values()))
+                from tvm.tir.schedule import InstructionKind
+                gm = GflowNetEmbedding()
+                # True: encode()
+                embedding_results, embedding_conditions, count_ptr_list = gm(
+                    sub_insts, sub_decisions, True)
+                # Now, disturb the decision's value
 
-            for er in embedding_results:
-                print(er.shape, end=" ")
-            print("")
-            new_sub_decisions = deep_copy_map(sub_decisions)
-            for key, value in new_sub_decisions.items():
-                if key.kind == InstructionKind.get("SampleCategorical"):
-                    new_sub_decisions[key] = tvm.tir.const(0, dtype='int32')
+                # for er in embedding_results:
+                #     print(er.shape, end=" ")
+                # print("")
+                if len(embedding_results) != len(AA):
+                    print(f"Wrong len of res = {len(embedding_results)}, len of decision = {len(AA)}")
+                    print(embedding_results)
+                    print(AA)
+                    flag = False
+                    break
+                new_sub_decisions = deep_copy_map(sub_decisions)
+                for key, value in new_sub_decisions.items():
+                    if key.kind == InstructionKind.get("SampleCategorical"):
+                        new_sub_decisions[key] = tvm.tir.const(0, dtype='int32')
 
-            # NOTE: following is training & model
-            max_value = max(max_value, len(embedding_results))
-            # False: decode(), new_insts & sub_decisions are list
-            # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
-            #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
-            new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=embedding_results,
-                                                  embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
-            
-            # Must use with_decision() to set sub_trace
-            for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-                sub_trace.with_decision(new_sub_inst, new_sub_decision, True)
+                # NOTE: following is training & model
+                max_value = max(max_value, len(embedding_results))
+                # False: decode(), new_insts & sub_decisions are list
+                # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
+                #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
+                new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=embedding_results,
+                                                    embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
 
-            BB = list(sub_trace.decisions.values())
-            print(check_decision_same(AA, BB), max_value)
-            assert check_decision_same(AA, BB), "Not same"
+                # Must use with_decision() to set sub_trace
+                for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
+                    sub_trace = sub_trace.with_decision(
+                        new_sub_inst, new_sub_decision, True)
+                print(f"len of old decision = {len(AA)}")
+                BB = list(sub_trace.decisions.values())
+                print(f"len of new decision = {len(BB)}")
+                print(check_decision_same(AA, BB), max_value)
+                assert check_decision_same(AA, BB), "Not same"

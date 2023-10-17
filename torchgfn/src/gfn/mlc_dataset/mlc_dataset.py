@@ -36,269 +36,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # from mypackage.subpackage import submodule
 
 
-def tlp_data_save(data_path, save_path):
-    target = "nvidia/nvidia-a100"
-    count_ptr = 0
-
-    databases = load_all_files(data_path)
-    print("Successfully Load Databases!")
-    candidates, results = [], []
-    for database in databases:
-        # database made up of records, including candidates info
-        records = database.get_all_tuning_records()
-        for record in records:
-            candidates.append(record.as_measure_candidate())
-            results.append(RunnerResult(
-                run_secs=record.run_secs, error_msg=None))
-            context = TuneContext(mod=record.workload.mod,
-                                  target=Target(target))
-
-            new_database = ms.database.JSONDatabase(
-                path_workload=os.path.join(
-                    save_path, f"workloads_{count_ptr}.json", ),
-                path_tuning_record=os.path.join(
-                    save_path, f"candidates_{count_ptr}.json"),
-            )
-            workload = record.workload
-            new_database.commit_workload(workload.mod)
-            new_database.commit_tuning_record(
-                ms.database.TuningRecord(
-                    trace=record.trace,
-                    workload=workload,
-                    run_secs=record.run_secs,
-                    target=Target(target),
-                )
-            )
-            print(f"Successfully Save File database_{count_ptr}")
-            count_ptr += 1
-
-
-def worker1(workload_path):
-
-    candidate_path = workload_path.replace("workloads", "candidates")
-
-    database = ms.database.JSONDatabase(
-        path_workload=workload_path, path_tuning_record=candidate_path)
-    # print("In each worker, ", len(database.get_all_tuning_records()))
-
-    return database.get_all_tuning_records()
-
-
-def worker0(workload_path):
-
-    candidate_path = workload_path.replace("workloads", "candidates")
-
-    database = ms.database.JSONDatabase(
-        path_workload=workload_path, path_tuning_record=candidate_path)
-    # print("In each worker, ", len(database.get_all_tuning_records()))
-    return database
-
-
-def record_data_load(record_path):
-
-    pool = multiprocessing.Pool(112)
-    # pool = ThreadPool()
-    workload_paths = sorted(
-        glob.glob(os.path.join(record_path, f"*workloads_*.json"), recursive=True))
-
-    databases = pool.map(worker1, workload_paths)
-
-    print(len(databases))
-    for i in range(20):
-        records = databases[i]
-        print(len(records))
-
-    return databases
-
-
-def record_data_load0(record_path):
-
-    from joblib import Parallel, delayed
-
-    # Parallelize the for loop using Joblib
-
-    workload_paths = sorted(
-        glob.glob(os.path.join(record_path, f"*workloads_*.json"), recursive=True))
-
-    databases = Parallel(n_jobs=112)(delayed(worker0)(i)
-                                     for i in workload_paths)
-    print("Finish load!")
-
-    print(len(databases))
-    for i in range(20):
-        records = databases[i].get_all_tuning_records()
-        print("len of records = ", len(records))
-
-    return databases
-
-
-def extract_features(
-    context: TuneContext,
-    candidates: List[MeasureCandidate],
-    results: Optional[List[RunnerResult]] = None,
-    extractor: Optional[FeatureExtractor] = None,
-):
-
-    extractor = extractor or PerStoreFeature(extract_workload=True)
-
-    def _feature(feature: NDArray) -> np.ndarray:
-        return feature.numpy().astype("float32")
-
-    def _mean_cost(res: RunnerResult) -> float:
-        if not res.run_secs:
-            return 1e10
-        return float(np.median([float(s) for s in res.run_secs]))
-
-    new_features = [_feature(x)
-                    for x in extractor.extract_from(context, candidates)]
-    #  np.array([_mean_cost(x) for x in results]).astype("float32")
-    new_mean_costs = None
-    new_mean_costs = (
-        np.array([_mean_cost(x) for x in results]).astype("float32")
-        if results is not None
-        else None
-    )
-
-    return new_features, new_mean_costs
-
-
-def restore_embedding(decode_info):
-
-    import torch.nn.functional as Fun
-    MAX_NUMBER = 15
-    # (bs, ...)
-    xs, databases_path, decodes, orders, conds, ptrs, target = decode_info
-    bs = xs.shape[0]
-    contexts, candidates = [], []
-    # print("len of xs", len(xs))
-    # TODO:.. print(len)
-
-    for i in range(bs):
-        x, database_path, decode, order, cond, ptr = \
-            xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
-
-        cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
-        ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
-        ex_cond0, ex_cond1 = torch.split(
-            cond, split_size_or_sections=MAX_NUMBER, dim=0)
-
-        ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
-        # convert into one-hot format
-        ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
-
-        emb0_x = emb0_x.item()
-        emb1_x = emb1_x.item()
-
-        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
-        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
-
-        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_NUMBER-cond_x0], 0)
-        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_NUMBER-cond_x1], 0)
-
-        cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
-        cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
-        # convert cuda:0 device into cpu
-        emb0 = emb0.cpu()
-        emb1 = emb1.cpu()
-        cond0 = cond0.cpu()
-        cond1 = cond1.cpu()
-
-        res = []
-        emb_conds = []
-        p0 = 0  # emb0 position
-        p1 = 0  # emb1
-        for i in range(max_len):
-            if order[i] == 0:
-                res.append(emb0[p0].numpy())
-                emb_conds.append(cond0[p0].numpy())
-                p0 += 1
-            else:
-                res.append(emb1[p1].numpy())
-                emb_conds.append(cond1[p1].numpy())
-                p1 += 1
-
-        if isinstance(ptr, np.ndarray):
-            ptr = ptr.astype(int)
-            ptr = ptr.tolist()
-        else:
-            ptr = ptr.int()
-            ptr = ptr.tolist()
-
-        workload_path, candidate_path = database_path
-        # NOTE: cost 1ms -- not return database, otherwise records is empty list
-        database = ms.database.JSONDatabase(path_workload=workload_path,
-                                            path_tuning_record=candidate_path)
-
-        records = database.get_all_tuning_records()
-        record = records[0]
-        candidate = record.as_measure_candidate()
-        # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
-        # NOTE: cost 10ms
-        context = TuneContext(mod=record.workload.mod, target=Target(target))
-
-        sub_sch = candidate.sch
-        # trace include instructions & decisions
-        sub_trace = sub_sch.trace
-        # instructions include deterministic and stochastic
-        sub_insts = sub_trace.insts
-        # decision only include stochastic instructions
-        sub_decisions = sub_trace.decisions
-        # print(f"old decision = {list(sub_decisions.values())}")
-        gm = GflowNetEmbedding()
-        new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
-                                              embedding_conditions=emb_conds, count_Ptr_results=ptr)
-
-        # NOTE: new decision is null list -- gm must pass valid insts & decisions
-        # print(f"new decision = {new_sub_decisions}")
-
-        # Must use with_decision() to set sub_trace
-        for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-            # new_sub_decision = tvm.tir.const(1, dtype='int32')
-            # NOTE: bug1 must assign to sub_trace
-            sub_trace = sub_trace.with_decision(
-                new_sub_inst, new_sub_decision, True)
-        nn = len(list(sub_trace.decisions.values()))
-        if nn > 2:
-            print(f"Encounter new condition in {candidate_path}!")
-
-            # print(f"res = {res}")
-        print(f"old decision = {list(sub_decisions.values())}")
-        print(f"new decisions = {new_sub_decisions}")
-        
-        from tvm.meta_schedule.database.database import TuningRecord
-
-        new_database = database
-        new_database.commit_workload(record.workload.mod)
-        new_database.commit_tuning_record(TuningRecord(
-            sub_trace,
-            record.workload,
-            record.run_secs,
-            Target(target),
-            candidate.args_info))
-
-        records = new_database.get_all_tuning_records()
-        # print("records shape = ", len(records))
-        # NOTE: commit add new candidates in json
-        record = records[-1]
-        # NOTE: n=3, but decision=4
-        candidate = record.as_measure_candidate()
-        context = TuneContext(mod=record.workload.mod, target=Target(target))
-        # TODO: check same context
-        # if len(contexts) > 0:
-        #     if context != contexts[-1]:
-        #         print("diff context")
-
-        # check correctness for 
-        # print(f"final candidate decision = {list(sub_decisions.values())}")
-        contexts.append(context)
-        candidates.append(candidate)
-        # print(f"after record = {record}, candidate = {candidate}, decision = ")
-
-    features, _ = extract_features(contexts[0], candidates)
-
-    return features
-
-
 # To make a GFlowNet dataset
 # TODO: need for add workload(in context) info as condition
 def gflownet_data_save(data_path, save_path):
@@ -320,10 +57,12 @@ def gflownet_data_save(data_path, save_path):
         return float(np.min([float(s) for s in res.run_secs]))
 
     max_order_len = 0
+    file_name = []
 
     for database in databases:
         # database made up of records, including candidates info
         records = database.get_all_tuning_records()
+        cc = 0
         for record in records:
             if os.path.exists(f"mlc_{count_ptr}.npz"):
                 count_ptr += 1
@@ -450,11 +189,311 @@ def gflownet_data_save(data_path, save_path):
                      last_ptr_list=last_ptr_list, run_secs=min_cost)
             print(f"Successfully Save File mlc_{count_ptr}.npz")
             count_ptr += 1
+            file_name.append(database.path_workload+f"{cc}")
+            cc += 1
 
-    print("Max order len = ", max_order_len)
+    # print("Max order len = ", max_order_len)
+    # Open file in write mode
+    with open(os.path.join(save_path, f'0records.txt'), 'w') as file:
+        # Write each item in the list to a new line in the file
+        for item in file_name:
+            file.write(str(item) + '\n')
 
 
-def formatter(file):
+def tlp_data_save(data_path, save_path):
+    target = "nvidia/nvidia-a100"
+    count_ptr = 0
+
+    databases = load_all_files(data_path)
+
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    print("Successfully Load Databases!")
+    candidates, results = [], []
+    file_name = []
+    for database in databases:
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        cc = 0
+        for record in records:
+            candidates.append(record.as_measure_candidate())
+            results.append(RunnerResult(
+                run_secs=record.run_secs, error_msg=None))
+            context = TuneContext(mod=record.workload.mod,
+                                  target=Target(target))
+
+            new_database = ms.database.JSONDatabase(
+                path_workload=os.path.join(
+                    save_path, f"workloads_{count_ptr}.json", ),
+                path_tuning_record=os.path.join(
+                    save_path, f"candidates_{count_ptr}.json"),
+            )
+            workload = record.workload
+            new_database.commit_workload(workload.mod)
+            new_database.commit_tuning_record(
+                ms.database.TuningRecord(
+                    trace=record.trace,
+                    workload=workload,
+                    run_secs=record.run_secs,
+                    target=Target(target),
+                )
+            )
+            print(f"Successfully Save File database_{count_ptr}")
+            count_ptr += 1
+            file_name.append(database.path_workload+f"{cc}")
+            cc += 1
+
+    with open(os.path.join(save_path, f'0records.txt'), 'w') as file:
+        # Write each item in the list to a new line in the file
+        for item in file_name:
+            file.write(str(item) + '\n')
+
+
+def worker1(workload_path):
+
+    candidate_path = workload_path.replace("workloads", "candidates")
+
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
+    # print("In each worker, ", len(database.get_all_tuning_records()))
+
+    return database.get_all_tuning_records()
+
+
+def worker0(workload_path):
+
+    candidate_path = workload_path.replace("workloads", "candidates")
+
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
+    # print("In each worker, ", len(database.get_all_tuning_records()))
+    return database
+
+
+def record_data_load(record_path):
+
+    pool = multiprocessing.Pool(112)
+    # pool = ThreadPool()
+    workload_paths = glob.glob(os.path.join(
+        record_path, f"*workloads_*.json"), recursive=True)
+
+    databases = pool.map(worker1, workload_paths)
+
+    print(len(databases))
+    for i in range(20):
+        records = databases[i]
+        print(len(records))
+
+    return databases
+
+
+def record_data_load0(record_path):
+
+    from joblib import Parallel, delayed
+
+    # Parallelize the for loop using Joblib
+
+    workload_paths = glob.glob(os.path.join(
+        record_path, f"*workloads_*.json"), recursive=True)
+
+    databases = Parallel(n_jobs=112)(delayed(worker0)(i)
+                                     for i in workload_paths)
+    print("Finish load!")
+
+    print(len(databases))
+    for i in range(20):
+        records = databases[i].get_all_tuning_records()
+        print("len of records = ", len(records))
+
+    return databases
+
+
+def extract_features(
+    context: TuneContext,
+    candidates: List[MeasureCandidate],
+    results: Optional[List[RunnerResult]] = None,
+    extractor: Optional[FeatureExtractor] = None,
+):
+
+    extractor = extractor or PerStoreFeature(extract_workload=True)
+
+    def _feature(feature: NDArray) -> np.ndarray:
+        return feature.numpy().astype("float32")
+
+    def _mean_cost(res: RunnerResult) -> float:
+        if not res.run_secs:
+            return 1e10
+        return float(np.median([float(s) for s in res.run_secs]))
+
+    new_features = [_feature(x)
+                    for x in extractor.extract_from(context, candidates)]
+    #  np.array([_mean_cost(x) for x in results]).astype("float32")
+    new_mean_costs = None
+    new_mean_costs = (
+        np.array([_mean_cost(x) for x in results]).astype("float32")
+        if results is not None
+        else None
+    )
+
+    return new_features, new_mean_costs
+
+
+def restore_embedding(decode_info):
+
+    import torch.nn.functional as Fun
+    MAX_NUMBER = 15
+    # (bs, ...)
+    xs, databases_path, decodes, orders, conds, ptrs, target = decode_info
+    bs = xs.shape[0]
+    contexts, candidates = [], []
+    # print("len of xs", len(xs))
+    # TODO:.. print(len)
+    old_decision = []
+    new_decision = []
+
+    for i in range(bs):
+        x, database_path, decode, order, cond, ptr = \
+            xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
+
+        cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
+        ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
+        ex_cond0, ex_cond1 = torch.split(
+            cond, split_size_or_sections=MAX_NUMBER, dim=0)
+
+        ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
+        # convert into one-hot format
+        ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
+
+        emb0_x = emb0_x.item()
+        emb1_x = emb1_x.item()
+
+        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
+        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
+
+        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_NUMBER-cond_x0], 0)
+        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_NUMBER-cond_x1], 0)
+
+        cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
+        cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
+        # convert cuda:0 device into cpu
+        emb0 = emb0.cpu()
+        emb1 = emb1.cpu()
+        cond0 = cond0.cpu()
+        cond1 = cond1.cpu()
+
+        res = []
+        emb_conds = []
+        p0 = 0  # emb0 position
+        p1 = 0  # emb1
+        for i in range(max_len):
+            if order[i] == 0:
+                res.append(emb0[p0].numpy())
+                emb_conds.append(cond0[p0].numpy())
+                p0 += 1
+            else:
+                res.append(emb1[p1].numpy())
+                emb_conds.append(cond1[p1].numpy())
+                p1 += 1
+
+        if isinstance(ptr, np.ndarray):
+            ptr = ptr.astype(int)
+            ptr = ptr.tolist()
+        else:
+            ptr = ptr.int()
+            ptr = ptr.tolist()
+
+        workload_path, candidate_path = database_path
+        if candidate_path == "/root/share/dataset/tlp_dataset0/candidates_64.json":
+            print(f"Wrong position!")
+        # NOTE: cost 1ms -- not return database, otherwise records is empty list
+        database = ms.database.JSONDatabase(path_workload=workload_path,
+                                            path_tuning_record=candidate_path)
+
+        records = database.get_all_tuning_records()
+        record = records[0]
+
+        candidate = record.as_measure_candidate()
+
+        # candidate = record.as_measure_candidate()
+        # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
+        # NOTE: cost 10ms
+        context = TuneContext(mod=record.workload.mod, target=Target(target))
+
+        sub_sch = candidate.sch
+        # trace include instructions & decisions
+        sub_trace = sub_sch.trace
+        # instructions include deterministic and stochastic
+        sub_insts = sub_trace.insts
+        # decision only include stochastic instructions
+        sub_decisions = sub_trace.decisions
+        # print(f"old decision = {list(sub_decisions.values())}")
+        gm = GflowNetEmbedding()
+        new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
+                                              embedding_conditions=emb_conds, count_Ptr_results=ptr)
+
+        # NOTE: new decision is null list -- gm must pass valid insts & decisions
+        # print(f"new decision = {new_sub_decisions}")
+
+        # Must use with_decision() to set sub_trace
+        for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
+            # new_sub_decision = tvm.tir.const(1, dtype='int32')
+            # NOTE: bug1 must assign to sub_trace
+            sub_trace = sub_trace.with_decision(
+                new_sub_inst, new_sub_decision, True)
+        nn = len(list(sub_trace.decisions.values()))
+        # if nn > 2:
+        #     print(f"Encounter new condition in {candidate_path}!")
+        #     print(f"old decision = {list(sub_decisions.values())}")
+        #     print(f"new decisions = {new_sub_decisions}")
+        #     # print(f"res = {res}")
+        old_decision.append(list(sub_decisions.values()))
+        new_decision.append(new_sub_decisions)
+
+        if candidate_path == "/root/share/dataset/tlp_dataset0/candidates_64.json":
+            print(f"Wrong decision, json = {candidate_path}")
+            print(f"Wrong decision, instruct = {new_sub_insts}")
+            print(f"Wrong decision, decision = {new_sub_decisions}")
+        from tvm.meta_schedule.database.database import TuningRecord
+
+        new_database = database
+        new_database.commit_workload(record.workload.mod)
+        new_database.commit_tuning_record(TuningRecord(
+            sub_trace,
+            record.workload,
+            record.run_secs,
+            Target(target),
+            candidate.args_info))
+
+        records = new_database.get_all_tuning_records()
+        # print("records shape = ", len(records))
+        # NOTE: commit add new candidates in json
+        record = records[-1]
+
+        # NOTE: n=3, but decision=4
+        candidate = record.as_measure_candidate()
+
+        # raise ValueError(f"{e}")
+
+        context = TuneContext(mod=record.workload.mod, target=Target(target))
+        # TODO: check same context
+        # if len(contexts) > 0:
+        #     if context != contexts[-1]:
+        #         print("diff context")
+
+        # check correctness for
+        # print(f"final candidate decision = {list(sub_decisions.values())}")
+        contexts.append(context)
+        candidates.append(candidate)
+        # print(f"after record = {record}, candidate = {candidate}, decision = ")
+
+    # print(f"old decision = {old_decision}")
+    # print(f"new decisions = {new_decision}")
+    features, _ = extract_features(contexts[0], candidates)
+
+    return features
+
+
+def formatter(file, workload_paths, candidate_paths):
     decode = file["decode"]
     decode = torch.from_numpy(decode)
     order = file["order"]
@@ -469,7 +508,7 @@ def formatter(file):
     run_secs = file['run_secs']
     run_secs = torch.from_numpy(run_secs)
 
-    return decode, order, last_embedding, run_secs, last_condition, last_ptr_list
+    return last_embedding, workload_paths, candidate_paths, decode, order, last_condition, last_ptr_list, run_secs
 
 # dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda
 # GFlowNet prefer 0~9 format avoid invalid format [1, 0, 1] + extra mask -- GFlowNet output [0.3, 0.5, ..., 0.1] with 10 position
@@ -478,22 +517,37 @@ def formatter(file):
 
 class MLCGflowNetDataset(Dataset):
     # TODO: change without_condition=False & determine condition len in future
-    def __init__(self, all_files, without_condition=False, ):
-        self.all_files = all_files
-        self.without_condition = without_condition
+    def __init__(self, all_files,):
+        self.npz_files, self.workload_paths, self.candidate_paths = all_files
 
     def __len__(self):
-        return len(self.all_files)
+        return len(self.npz_files)
 
     def __getitem__(self, idx):
-        file = self.all_files[idx]
+        file = self.npz_files[idx]
         file = np.load(file)
-        return formatter(file)
+        workload_paths, candidate_paths = self.workload_paths[idx], self.candidate_paths[idx]
+        return formatter(file, workload_paths, candidate_paths)
 
+# # Custom collate function
+
+# def my_collate_fn(batch):
+#     strings = []
+#     numbers = []
+
+#     for item in batch:
+#         if isinstance(item, str):
+#             strings.append(item)
+#         else:
+#             numbers.append(item)
+
+#     return strings, torch.tensor(numbers)
 
 # Load above GFlowNet Dataset for search, ret dataloader
+
+
 def gflownet_data_load(save_path,
-                       without_condition=False,
+                       database_path=None,
                        num_workers=4,
                        batch_size=16,
                        shuffle=False,
@@ -501,14 +555,23 @@ def gflownet_data_load(save_path,
                        drop_last=True):
     import glob
 
-    def search_all_files(work_dir):
-        npz_files = sorted(glob.glob(os.path.join(
-            work_dir, "*.npz"), recursive=True))
-        return npz_files
+    def search_all_files(work_dir, database_path):
+        npz_files = glob.glob(os.path.join(
+            work_dir, "*.npz"), recursive=True)
 
-    all_files = search_all_files(save_path)
-    dataset = MLCGflowNetDataset(
-        all_files, without_condition=without_condition)
+        workload_paths = glob.glob(os.path.join(
+            database_path, f"workloads*.json"), recursive=True)
+        candidate_paths = [workload_path.replace(
+            "workloads", "candidates") for workload_path in workload_paths]
+
+        # num = len(candidate_paths)
+        # # NOTE: not use sorted()
+        # databases_path = [(workload_paths[i], candidate_paths[i])
+        #                   for i in range(num)]
+        return npz_files, workload_paths, candidate_paths
+
+    all_files = search_all_files(save_path, database_path)
+    dataset = MLCGflowNetDataset(all_files)
     # A generative task without any validate dataset.
     # DataLoader speed up data loader
     dataloader = DataLoader(dataset, batch_size=batch_size, drop_last=True,

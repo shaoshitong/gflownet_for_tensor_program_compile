@@ -302,13 +302,13 @@ class DiscreteStates(States, ABC):
             device=self.__class__.device,
         )
         if forward_masks is None and backward_masks is None:
-            self.update_masks()
+            self.update_masks(None)
         else:
             self.forward_masks = cast(torch.Tensor, forward_masks)
             self.backward_masks = cast(torch.Tensor, backward_masks)
 
     @abstractmethod
-    def update_masks(self) -> None:
+    def update_masks(self, info = None) -> None:
         """Updates the masks, called after each action is taken."""
 
     def _check_both_forward_backward_masks_exist(self):

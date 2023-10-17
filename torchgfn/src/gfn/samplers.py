@@ -70,23 +70,7 @@ class Sampler:
                 t1, [cond_y1[i].item(), 34-cond_y1[i].item()], 1)
             cond0.append(t0)
             cond1.append(t1)
-            # # NOTE: init zero for greater than len(factors)
-            # import numpy as np
-            # if t1.shape[0] > 0:
-            #     m = t1.shape[0]
-            #     for j in range(m):
-            #         tt = t1[j].numpy() # (4, 34)
-            #         factors = tt[2:]
-            #         ed = np.argmin(factors != 0)
-            #         factors = factors[:ed]
-            #         lenf = len(factors)
-            #         len0 = 15
-            #         delta = 96
-            #         state = states.tensor[i]
-            #         st = len0 + j*delta + 3*lenf
-            #         ed = len0 + (j+1)*delta
-            #         state[st:ed] = 0
-            #         states.tensor[i] = state
+
         # NOTE: unable stack for unequal size [3, 24] & [4, 24], only use list
         # cond0 = torch.stack(cond0, 0)
         # cond1 = torch.stack(cond1, 0)
@@ -148,6 +132,7 @@ class Sampler:
             pos = torch.tensor([i for i in range(res.shape[0])])
             return pos[is_valid == 0]
 
+
         module_output = self.estimator(states)
         # distribution for sample
         dist = self.estimator.to_probability_distribution(
@@ -158,18 +143,18 @@ class Sampler:
             res = dist.sample()
             actions = res
 
-            # NOTE: mark pre valid value avoiding repeat sample
-            mask = torch.zeros(res.shape[0])
-            new_mask = mask
-            pos = check(res, cond0, cond1, new_mask)
-            while (pos.shape[0] > 0):
-                res0 = dist.sample()
-                actions[pos] = res0[pos]
-                mask = torch.zeros(res.shape[0])
-                mask[pos] = 1
-                mask = torch.logical_not(mask)
-                new_mask = torch.logical_or(new_mask, mask)
-                pos = check(res0, cond0, cond1, new_mask)
+            # # NOTE: mark pre valid value avoiding repeat sample
+            # mask = torch.zeros(res.shape[0])
+            # new_mask = mask
+            # pos = check(res, cond0, cond1, new_mask)
+            # while (pos.shape[0] > 0):
+            #     res0 = dist.sample()
+            #     actions[pos] = res0[pos]
+            #     mask = torch.zeros(res.shape[0])
+            #     mask[pos] = 1
+            #     mask = torch.logical_not(mask)
+            #     new_mask = torch.logical_or(new_mask, mask)
+            #     pos = check(res0, cond0, cond1, new_mask)
 
         log_probs = dist.log_prob(actions)
         if torch.any(torch.isinf(log_probs)):
@@ -270,7 +255,7 @@ class Sampler:
             # states.is_initial_state = True -- syntax error, solve in base.py
             # NOTE: must add update_masks(), otherwise log_pf will be -inf
         if isinstance(states, DiscreteStates):
-            states.update_masks()
+            states.update_masks(info)
         from copy import deepcopy
         return deepcopy(states)
 
@@ -367,9 +352,9 @@ class Sampler:
             # NOTE: step 2 -- apply action to state
             # if backward sampler, apply action to state, get new state
             if self.estimator.is_backward:
-                new_states = env.backward_step(states, actions, dones)
+                new_states = env.backward_step(states, actions, dones, info)
             else:
-                new_states = env.step(states, actions, dones)
+                new_states = env.step(states, actions, dones, info)
             sink_states_mask = new_states.is_sink_state
 
             step += 1
@@ -384,7 +369,7 @@ class Sampler:
                 print("new done state!")
             trajectories_dones[new_dones & ~dones] = step
             # NOTE: step 3 -- get log reward
-            # try:
+
             if self.estimator.is_backward:
                 trajectories_log_rewards[new_dones & ~dones], res = env.log_reward(
                     backward_state[new_dones & ~dones], info
@@ -394,15 +379,7 @@ class Sampler:
                 trajectories_log_rewards[new_dones & ~dones], res = env.log_reward(
                     states[new_dones & ~dones], info
                 )
-            # except NotImplementedError:
-            #     if self.estimator.is_backward:
-            #         trajectories_log_rewards[new_dones & ~dones] = torch.log(
-            #             env.reward(backward_state[new_dones & ~dones], info)
-            #         )
-            #     else:
-            #         trajectories_log_rewards[new_dones & ~dones] = torch.log(
-            #             env.reward(new_states[new_dones & ~dones], info)
-            #         )
+
 
             states = new_states
             dones = dones | new_dones

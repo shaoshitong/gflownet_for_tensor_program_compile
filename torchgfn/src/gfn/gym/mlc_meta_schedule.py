@@ -162,7 +162,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
                 return forward_masks, backward_masks
 
-            def update_masks(self) -> None:
+            def update_masks(self, info) -> None:
 
                 # The following two lines are for typing only.
 
@@ -184,25 +184,82 @@ class MetaScheduleEnv(DiscreteEnv):
                 # as it is not -1.
                 '''
 
+
                 act_low0 = env.one_hot_ndim*env.one_hot_seq_len
                 act_high0 = act_low0 + 2*env.binary_ndim*env.binary_seq_len
                 sta_low0 = env.one_hot_seq_len
+                valid_mask = torch.full_like(self.forward_masks, fill_value=1, device=self.tensor.device).bool()
+
+                if info != None:
+
+                    # shape: (16) (16, 7) (16, 15) (16, 30, 34) (16, 3)
+                    databases_path, decode, order, cond, ptr, target = info
+
+                    cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = torch.split(
+                        decode, split_size_or_sections=1, dim=1)
+
+                    ex_cond0, ex_cond1 = torch.split(
+                        cond, split_size_or_sections=15, dim=1)  # split along 1dim
+                    cond0 = []
+                    cond1 = []
+                    for i in range(cond_x0.shape[0]):
+                        t0, _ = torch.split(
+                            ex_cond0[i], [cond_x0[i].item(), 15-cond_x0[i].item()], 0)
+                        t1, _ = torch.split(
+                            ex_cond1[i], [cond_x1[i].item(), 15-cond_x1[i].item()], 0)
+
+                        t0, _ = torch.split(
+                            t0, [cond_y0[i].item(), 34-cond_y0[i].item()], 1)
+                        t1, _ = torch.split(
+                            t1, [cond_y1[i].item(), 34-cond_y1[i].item()], 1)
+                        cond0.append(t0)
+                        cond1.append(t1)
+
+
+                    for id in range(len(cond0)):  # (16)
+                        if cond0[id].shape[0] > 0:
+                            old_len0 = cond0[id][..., 3].to("cuda")  # (3, 24)
+                            n = len(cond0)
+                            m = old_len0.shape[0]
+                            # NOTE: must satisfy all condition
+                            for i in range(m):
+                                hi = 10*i + old_len0[i].item()
+                                ma = 10 * (i+1)
+                                valid_mask[...,id, int(hi):ma] = False
+
+                        # # TODO: satisfy cond1
+                        # if cond1[id].shape[0] > 0:
+                        #     old_len1 = cond1[id][..., 0].to("cuda") # (3, 34)
+                        #     m = old_len1.shape[0]
+                        #     scale = 96*2
+                        #     base = 15*10
+                        #     # NOTE: must satisfy all condition
+                        #     for i in range(m):
+
+                        #         hi = base + scale * i + old_len1[i].item()
+                        #         ma = base + scale * (i+1) + 
+
+
                 # NOTE: forward mask is valid position flag (-1) for action
                 # [..., None]: add new dim, [1, 2, 3] --> [[1], [2], [3]]
                 # expand(): convert one flag state into ndim action -- (15, ) --> (15, 10)
                 # NOTE: for traj: (s0, s1, ... sf)
                 self.forward_masks[..., :act_low0] = \
                     (self.tensor[..., :sta_low0] == -1)[..., None].expand(*self.tensor.shape[:-1],
-                        env.one_hot_seq_len, env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1], act_low0)
+                                                                          env.one_hot_seq_len, env.one_hot_ndim).contiguous().view(*self.tensor.shape[:-1], act_low0)
+
+                self.forward_masks[..., :act_low0] = self.forward_masks[..., :act_low0] & valid_mask[..., :act_low0]
 
                 self.forward_masks[..., act_low0:act_high0] = \
                     (self.tensor[..., sta_low0:] == -1)[..., None].expand(*self.tensor.shape[:-1],
-                        env.binary_ndim*env.binary_seq_len, 2).contiguous().view(*self.tensor.shape[:-1], act_high0-act_low0)
+                                                                          env.binary_ndim*env.binary_seq_len, 2).contiguous().view(*self.tensor.shape[:-1], act_high0-act_low0)
 
+                self.forward_masks[..., act_low0:act_high0] = self.forward_masks[..., act_low0:act_high0] & valid_mask[..., act_low0:act_high0]
                 # 2) The last action is not a terminal state as long as one of the e \
                 # xistent states is -1.
                 # torch.all(input): test if all eles in input evaluate to True
-                self.forward_masks[..., -1] = torch.all(self.tensor != -1, dim=-1)
+                self.forward_masks[..., -
+                                   1] = torch.all(self.tensor != -1, dim=-1)
 
                 r'''# 3) The case of backward's mask is more complex, and we need to emp \
                 # loy torch.scatter to insert executable markers at the appropriate  \
@@ -225,7 +282,6 @@ class MetaScheduleEnv(DiscreteEnv):
                 index = self.tensor[..., :env.one_hot_seq_len] + (torch.arange(
                     env.one_hot_seq_len, device=self.tensor.device) * env.one_hot_ndim)[None, ...]
                 mask = self.tensor[..., :env.one_hot_seq_len] >= 0
-
 
                 # Using advanced indexing instead of the double loop
                 # get pos of each nonzero: (tensor([0, 1, 2, 3]), tensor([0, 1, 2, 3]))
@@ -261,7 +317,9 @@ class MetaScheduleEnv(DiscreteEnv):
                     self.tensor[..., env.one_hot_seq_len:] == 0
                 self.backward_masks[..., act_low0+1: act_high0:2] = \
                     self.tensor[..., env.one_hot_seq_len:] == 1
-                print(f"Finish update mask")
+                # NOTE: for debug
+                a = [0]
+                # print(f"Finish update mask")
 
         return DiscreteMSStates
 
@@ -310,13 +368,13 @@ class MetaScheduleEnv(DiscreteEnv):
         #     old_len1 = cond1[..., 3]
         if actions.tensor.shape[0] == 0:
             return states.tensor
-        
+
         len0 = self.one_hot_ndim*self.one_hot_seq_len
         len1 = len0 + 2*self.binary_ndim*self.binary_seq_len
 
         # NOTE: first 15 items if action < 150:  (16, 1)
         mask_0 = (actions.tensor < len0).squeeze(-1)
-        mask_0 = mask_0&~dones
+        mask_0 = mask_0 & ~dones
         # index0 for first 15 items (16, 1)
         index_0 = (actions.tensor / self.one_hot_ndim).long()
         # fmod() 取余, value for first 15 items (16, 1)
@@ -333,7 +391,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
         mask_1 = (actions.tensor >= len0) & (actions.tensor < len1)
         mask_1 = mask_1.squeeze(-1)
-        mask_1 = mask_1&~dones
+        mask_1 = mask_1 & ~dones
         index_1 = (((actions.tensor - len0) / 2).int() +
                    self.one_hot_seq_len).long()
         value_1 = torch.fmod(actions.tensor - len0, 2).long()
@@ -368,12 +426,12 @@ class MetaScheduleEnv(DiscreteEnv):
         # databases_path, decode, order, cond, ptr, target = info
         if actions.tensor.shape[0] == 0:
             return states.tensor
-        
+
         len0 = self.one_hot_ndim*self.one_hot_seq_len
         len1 = len0 + 2*self.binary_ndim*self.binary_seq_len
 
         mask_0 = (actions.tensor < len0).squeeze(-1)
-        mask_0 = mask_0&~dones
+        # mask_0 = mask_0 & ~dones
         index_0 = (actions.tensor / self.one_hot_ndim).long()
         value_0 = -1
         states.tensor[mask_0] = states.tensor[mask_0].scatter(
@@ -386,7 +444,7 @@ class MetaScheduleEnv(DiscreteEnv):
 
         mask_1 = (actions.tensor >= len0) & (actions.tensor < len1)
         mask_1 = mask_1.squeeze(-1)
-        mask_1 = mask_1&~dones
+        # mask_1 = mask_1 & ~dones
         index_1 = (((actions.tensor - len0) / 2).int() +
                    self.one_hot_seq_len).long()
         value_1 = -1
@@ -445,8 +503,10 @@ class MetaScheduleEnv(DiscreteEnv):
 
         res = torch.from_numpy(np.array(pred_results)).to(self.device)
         res = res.to(torch.float32)
-        print(f"res = {res}")
-        # print(f"len of res = {res.shape}")
+        # print(f"res = {res}")
+        print(
+            f"In log_reward() reward = {-self.alpha * res.clone().detach().view(-1)}")
+
         return -self.alpha * res.clone().detach().view(-1), res
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:

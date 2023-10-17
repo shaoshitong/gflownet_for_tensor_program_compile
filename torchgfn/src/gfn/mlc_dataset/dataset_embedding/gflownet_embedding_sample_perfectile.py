@@ -96,7 +96,7 @@ class EmbeddingSamplePerfectTile:
     @staticmethod
     def convert_to_original(binary_array):
         # max_len = int(np.ceil(np.log2(EmbeddingSamplePerfectTile.embedding_total + 1)))
-        original_shape = binary_array.shape[:-1]
+        original_shape = binary_array.shape[-1]
         original_array = np.zeros(original_shape, dtype=int)
 
         for idx in np.ndindex(original_shape):
@@ -180,7 +180,7 @@ class EmbeddingSamplePerfectTile:
 
                 embedding_result = embedding_results[count_ptr]
                 embedding_result = EmbeddingSamplePerfectTile.convert_to_original(
-                    embedding_result).tolist()  # shape (32,0)
+                    embedding_result).tolist()  # shape (32,)
 
                 embedding_condition = embedding_conditions[count_ptr]
                 # first 2 is num & max_factor, last is padding zeros
