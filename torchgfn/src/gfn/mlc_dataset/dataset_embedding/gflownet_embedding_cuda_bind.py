@@ -163,9 +163,10 @@ class EmbeddingCUDABind:
                 continue
             insts.append(sample_inst)
 
-            one_hot = embedding_results[count_ptr]
+            # one_hot = embedding_results[count_ptr]
             count_ptr += 1
-            new_value = np.argmax(one_hot)
+            # new_value = np.argmax(one_hot)
+            new_value = embedding_results[count_ptr]
             new_value = tvm.tir.const(new_value, dtype='int32')
             new_insts.append(sample_inst)
             new_decisions.append(new_value)

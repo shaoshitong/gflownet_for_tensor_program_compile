@@ -11,6 +11,7 @@ from tvm.meta_schedule.cost_model.tlp_cost_model_train import TransformerModule
 
 import os
 
+
 def code2html(code):
     """Helper function to use pygments to turn the code string into highlighted html."""
     import pygments
@@ -19,6 +20,7 @@ def code2html(code):
     formatter = HtmlFormatter()
     html = pygments.highlight(code, Python3Lexer(), formatter)
     return "<style>%s</style>%s\n" % (formatter.get_style_defs(".highlight"), html)
+
 
 @tvm.script.ir_module
 class MyModule:
@@ -36,6 +38,7 @@ class MyModule:
                     C[vi, vj] = 0.0
                 C[vi, vj] = C[vi, vj] + A[vi, vk] * B[vk, vj]
 
+
 epoch = 10
 ans = 0
 for i in range(epoch):
@@ -45,25 +48,28 @@ for i in range(epoch):
         mod=MyModule,
         max_trials_global=64,
         num_trials_per_iter=64,
-        strategy = "gflownet", # evolution_python
+        strategy="gflownet",  # evolution_python
         target=target,
         work_dir="./tune_tmp",
         cost_model="tlp_costmodel",
         task_name="main",
     )
-    
+
     sch = ms.tir_integration.compile_tir(database, MyModule, target)
-    a_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"), device=tvm.cuda())
-    b_nd = tvm.nd.array(np.random.uniform(size=(128, 128)).astype("float32"), device=tvm.cuda())
+    a_nd = tvm.nd.array(np.random.uniform(
+        size=(128, 128)).astype("float32"), device=tvm.cuda())
+    b_nd = tvm.nd.array(np.random.uniform(
+        size=(128, 128)).astype("float32"), device=tvm.cuda())
     c_nd = tvm.nd.empty((128, 128), "float32", device=tvm.cuda())
     # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
     lib = tvm.build(sch.mod, target="cuda")
     # lib = tvm.build(sch.mod, target=target)
 
     f_timer_after = lib.time_evaluator("main", tvm.cuda())
-    
-    ans = (f_timer_after(a_nd, b_nd, c_nd).mean * 1000)
-    print("Time cost of MyModule after tuning: %.3f ms" % (f_timer_after(a_nd, b_nd, c_nd).mean * 1000))
+
+    tmp = (f_timer_after(a_nd, b_nd, c_nd).mean * 1000)
+    ans += tmp
+    print("Time cost of MyModule after tuning: %f ms" % (tmp))
     sch.trace.show()
     IPython.display.HTML(code2html(sch.mod.script()))
 

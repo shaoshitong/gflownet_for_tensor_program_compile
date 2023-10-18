@@ -95,8 +95,13 @@ class EmbeddingSamplePerfectTile:
 
     @staticmethod
     def convert_to_original(binary_array):
-        # max_len = int(np.ceil(np.log2(EmbeddingSamplePerfectTile.embedding_total + 1)))
-        original_shape = binary_array.shape[-1]
+
+        max_len = int(
+            np.ceil(np.log2(EmbeddingSamplePerfectTile.embedding_total + 1)))
+        if len(binary_array.shape) == 1:
+            binary_array = binary_array.reshape(-1, max_len)
+
+        original_shape = binary_array.shape[:-1]
         original_array = np.zeros(original_shape, dtype=int)
 
         for idx in np.ndindex(original_shape):
@@ -149,9 +154,14 @@ class EmbeddingSamplePerfectTile:
                             embedding_result[j] = i+1
                             masks[j] = True
                 # Fourth, embedding in binary - (32, 3) binary value
-                embedding_result = EmbeddingSamplePerfectTile.expand_to_binary(
-                    np.array(embedding_result))
-                embedding_results.append(embedding_result)
+                # embedding_result = EmbeddingSamplePerfectTile.expand_to_binary(
+                #     np.array(embedding_result))
+                # NOTE: convert 32 value into one-hot len=10
+                # max_len = EmbeddingSamplePerfectTile.embedding_total+1
+                
+                max_len = 10
+                one_hot = np.eye(max_len)[embedding_result]
+                embedding_results.append(one_hot)
 
                 # Fifth, embedding the condition
                 embedding_condition = []
@@ -179,9 +189,14 @@ class EmbeddingSamplePerfectTile:
                 new_np_sub_value = np.ones_like(np_sub_value)
 
                 embedding_result = embedding_results[count_ptr]
-                embedding_result = EmbeddingSamplePerfectTile.convert_to_original(
-                    embedding_result).tolist()  # shape (32,)
+                # embedding_result = EmbeddingSamplePerfectTile.convert_to_original(
+                #     embedding_result).tolist()  # shape (32,)
+                max_len = 10
+                # if len(embedding_result.shape) == 1:
+                #     embedding_result = embedding_result.reshape(-1, max_len)
 
+                # embedding_result = np.argmax(embedding_result, axis=1)
+                
                 embedding_condition = embedding_conditions[count_ptr]
                 # first 2 is num & max_factor, last is padding zeros
                 factors = embedding_condition[2:]

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     state_len = 15 * 1 + 15 * 96
     action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path = "/root/kongdehao/model/min_tlp/tlp_model_73.pth"
+    tlp_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
 
     device = "cuda"
     # with open(tlp_path, 'rb') as f:
@@ -60,8 +60,8 @@ if __name__ == "__main__":
     # cost_model = edm_model
     # TODO: input TLP in energy, but we need align format
     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
-    # alpha \in [1, 500]
-    env = MetaScheduleEnv(energy=cost_model, alpha=120, device_str=device)
+    # alpha \in [1, 100]
+    env = MetaScheduleEnv(energy=cost_model, alpha=50, device_str=device)
 
     # 2 - We define the needed modules (neural networks)
     # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     x0, workload_paths0, candidate_paths0, decode0, order0, cond0, ptr0, score0 = next(
         train_iter0)
     # epoch = 5000
-    epoch = 5000
+    epoch = 500
     target = "cuda"
 
     wandb_project = "train forward paradigm MetaSchedule Env with TLP"
@@ -262,12 +262,15 @@ if __name__ == "__main__":
                     {"f_loss": f_loss.item(), "reward": reward})
                 # log metrics to wandb
                 wandb.log({"res[0]": f_trajectories.res[0], "res[1]": f_trajectories.res[1],
-                           "res[2]": f_trajectories.res[2], "f_loss": f_loss.item(), "reward": reward})
+                           "res[2]": f_trajectories.res[2], "res[3]": f_trajectories.res[3],
+                           "res[4]": f_trajectories.res[4], "res[5]": f_trajectories.res[5],
+                           "res[6]": f_trajectories.res[6], "res[7]": f_trajectories.res[7],
+                           "f_loss": f_loss.item(), "reward": reward})
             if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
                 dir = os.path.join(gfn_path, f"forward_gflownet_{ep}.pth")
                 last_dir = os.path.join(
-                    gfn_path, f"forward_gflownet_{ep-20}.pth")
+                    gfn_path, f"forward_gflownet_{ep-50}.pth")
                 torch.save(gfn, dir)
                 os.system(f"rm -rf {last_dir}")
 

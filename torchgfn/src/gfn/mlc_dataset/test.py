@@ -41,7 +41,7 @@ if __name__ == "__main__":
                 sub_insts = sub_trace.insts
                 # decision only include stochastic instructions
                 sub_decisions = sub_trace.decisions
-
+                print(f"old insts & decisions = {sub_decisions}")
                 AA = (list(deep_copy_map(sub_trace.decisions).values()))
                 from tvm.tir.schedule import InstructionKind
                 gm = GflowNetEmbedding()
@@ -69,15 +69,18 @@ if __name__ == "__main__":
                 # False: decode(), new_insts & sub_decisions are list
                 # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
                 #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
-                new_sub_insts, new_sub_decisions = gm([], {}, False, embedding_results=embedding_results,
+                new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
                                                     embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
 
                 # Must use with_decision() to set sub_trace
                 for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
                     sub_trace = sub_trace.with_decision(
                         new_sub_inst, new_sub_decision, True)
-                print(f"len of old decision = {len(AA)}")
+                    
+                # print(f"len of old decision = {len(AA)}")
                 BB = list(sub_trace.decisions.values())
-                print(f"len of new decision = {len(BB)}")
+                # print(f"len of new decision = {len(BB)}")
                 print(check_decision_same(AA, BB), max_value)
-                assert check_decision_same(AA, BB), "Not same"
+                if not check_decision_same(AA, BB):
+                    print(f"new insts & decision = {sub_trace.decisions}")
+

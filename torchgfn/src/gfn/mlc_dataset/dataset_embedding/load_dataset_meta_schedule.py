@@ -29,12 +29,7 @@ from tvm.ir import load_json
 from tvm.target import Target
 import multiprocessing
 from multiprocessing.pool import ThreadPool
-
-
-def load_workload_and_candidate(workload_path, candidate_path):
-    database = ms.database.JSONDatabase(
-        path_workload=workload_path, path_tuning_record=candidate_path)
-    return database
+import copy
 
 
 def search_all_files(work_dir):
@@ -49,17 +44,56 @@ def search_all_files(work_dir):
     return results
 
 
-def load_all_files(work_dir):
+def load_workload_and_candidate(result):
+    workload_path, candidate_path = result
+    database = ms.database.JSONDatabase(
+        path_workload=workload_path, path_tuning_record=candidate_path)
+
+    records = database.get_all_tuning_records()
+    print(f"len of records = {len(records)}")
+    return database
+
+
+def load_all_files0(work_dir):
     results = search_all_files(work_dir)
     databases = []
     # pool = multiprocessing.Pool(112)
 
     for result in results:
-        workload_path, candidate_path = result
-        database = load_workload_and_candidate(workload_path, candidate_path)
+        database = load_workload_and_candidate(result)
         # database = load_workload_and_candidate(*result)
         databases.append(database)
 
+    for database in databases:
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        print(f"len of records = {len(records)}")
+    return databases
+
+
+def load_all_files(work_dir):
+
+    results = search_all_files(work_dir)
+
+    # NOTE: not work! len == 0
+    # pool = multiprocessing.Pool(112)
+    
+    # NOTE: work! -- len > 0
+    pool = ThreadPool(112)
+    databases = pool.map(load_workload_and_candidate, results)
+    pool.close()
+    
+    # NOTE: work! -- len > 0
+    # databases = []
+    # for result in results:
+    #     database = load_workload_and_candidate(result)
+    #     # database = load_workload_and_candidate(*result)
+    #     databases.append(database)
+
+    for database in databases:
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        print(f"len of records = {len(records)}")
     return databases
 
 

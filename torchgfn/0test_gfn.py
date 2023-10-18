@@ -44,7 +44,7 @@ if __name__ == "__main__":
     state_len = 15 * 1 + 15 * 96
     action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path = "/root/kongdehao/model/min_tlp/tlp_model_73.pth"
+    tlp_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
 
     device = "cuda"
     # with open(tlp_path, 'rb') as f:
@@ -141,12 +141,11 @@ if __name__ == "__main__":
 
     num0 = len(workload_paths0)
     databases_path0 = [(workload_paths0[i], candidate_paths0[i])
-                        for i in range(num0)]
+                       for i in range(num0)]
     f_info = (databases_path0, decode0, order0, cond0, ptr0, target)
 
-
     gfn = torch.load(gfn_path, map_location=device)
-    traj =  gfn.sample_trajectories(env=env, n_samples=16, info=f_info)
+    traj = gfn.sample_trajectories(env=env, n_samples=16, info=f_info)
     xs = traj.states[-2]
     xs = xs.tensor
 
@@ -160,6 +159,8 @@ if __name__ == "__main__":
     # TODO:.. print(len)
     old_decision = []
     new_decision = []
+    old_time = []
+    new_time = []
     old_ans = 0
     new_ans = 0
 
@@ -237,15 +238,18 @@ if __name__ == "__main__":
         # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
         lib = tvm.build(old_sch.mod, target="cuda")
         # lib = tvm.build(sch.mod, target=target)
-        a_nd = tvm.nd.array(np.random.uniform(size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
-        b_nd = tvm.nd.array(np.random.uniform(size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
+        a_nd = tvm.nd.array(np.random.uniform(
+            size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
+        b_nd = tvm.nd.array(np.random.uniform(
+            size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
 
         f_timer_after = lib.time_evaluator("main", tvm.cuda())
         # print(f"{record.workload.mod}")
         tmp = f_timer_after(a_nd, b_nd).mean * 1000
+        old_time.append(tmp)
         old_ans += tmp
-        print("Time cost of MyModule before tuning: %.3f ms" % (tmp))
-        
+        print("Time cost of MyModule before tuning: %f ms" % (tmp))
+
         # print(f"after record = {record}, candidate = {candidate}, decision = ")
         gm = GflowNetEmbedding()
         new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
@@ -297,20 +301,24 @@ if __name__ == "__main__":
         # print(f"final candidate decision = {list(sub_decisions.values())}")
         contexts.append(context)
         candidates.append(candidate)
-        
+
         # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
         lib = tvm.build(sch.mod, target="cuda")
         # lib = tvm.build(sch.mod, target=target)
-        a_nd = tvm.nd.array(np.random.uniform(size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
-        b_nd = tvm.nd.array(np.random.uniform(size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
-        c_nd = tvm.nd.empty((128, 128), "float32", device = tvm.cuda())
+        a_nd = tvm.nd.array(np.random.uniform(
+            size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
+        b_nd = tvm.nd.array(np.random.uniform(
+            size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
+        c_nd = tvm.nd.empty((128, 128), "float32", device=tvm.cuda())
         f_timer_after = lib.time_evaluator("main", tvm.cuda())
         # print(f"{record.workload.mod}")
+        new_time.append(tmp)
         tmp = f_timer_after(a_nd, b_nd).mean * 1000
         new_ans += tmp
-        print("Time cost of MyModule after tuning: %.3f ms" % (tmp))
+        print("Time cost of MyModule after tuning: %f ms" % (tmp))
 
-
+    print(f"old times = {old_time}")
+    print(f"new times = {new_time}")
     print(f"old mean time = {old_ans*1.0/bs} ms")
     print(f"new mean time = {new_ans*1.0/bs} ms")
     print(f"Finish")

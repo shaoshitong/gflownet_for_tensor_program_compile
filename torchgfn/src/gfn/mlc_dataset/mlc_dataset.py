@@ -35,6 +35,155 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Import subpackage.submodule
 # from mypackage.subpackage import submodule
 
+# To make a GFlowNet dataset
+# TODO: need for add workload(in context) info as condition
+
+
+def measure_tlp(data_path, save_path):
+    assert os.path.exists(data_path), f"{data_path} not exists!"
+    # database include candidates(trace, instructions&decision) & workload(subgraph)
+    databases = load_all_files(data_path)
+    gm = GflowNetEmbedding()
+    print("Successfully Load Databases!")
+    datasets = []
+    count_ptr = 0
+
+    device = "cuda"
+
+    tlp_median_home_14_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
+
+    tlp_median_home_14 = torch.load(
+        tlp_median_home_14_path, map_location=device)
+    tlp_median_home_14.to(device)
+
+    tlp_median_14_path = "/root/kongdehao/model/tlp/median/tlp_median_14.pth"
+    tlp_median_14 = torch.load(tlp_median_14_path, map_location=device)
+    tlp_median_14.to(device)
+
+    tlp_median_home0_13_path = "/root/kongdehao/model/tlp/median/tlp_median_home0_13.pth"
+    tlp_median_home0_13 = torch.load(
+        tlp_median_home0_13_path, map_location=device)
+    tlp_median_home0_13.to(device)
+
+    tlp_old_14_path = "/root/kongdehao/model/median_tlp/save_model_v1/tlp_model_14.pkl"
+    with open(tlp_old_14_path, 'rb') as f:
+        tlp_old_14 = pickle.load(f)
+    tlp_old_14.to(device)
+    # Modify the device_ids
+    tlp_old_14.device_ids = [0, 1, 2, 3, 4, 5, 6, 7]
+    # Modify the src_device_obj
+    tlp_old_14.src_device_obj = torch.device('cuda:0')
+    # Modify the output_device
+    tlp_old_14.output_device = torch.device('cuda:0')
+
+
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    # get min cost time from multiple measure runtime
+    def _min_cost(res) -> float:
+        if not res.run_secs:
+            return 1e10
+        return float(np.min([float(s) for s in res.run_secs]))
+
+    hardware_time = []
+    tlp_median_home_14_time = []
+    tlp_median_14_time = []
+    tlp_median_home0_13_time = []
+    tlp_old_14_time = []
+    target = "cuda"
+
+    for database in databases:
+        # database made up of records, including candidates info
+        records = database.get_all_tuning_records()
+        for record in records:
+            # convert record into measured candidates
+            # measure_candidate for
+            sub_sch = record.as_measure_candidate().sch
+            # record.workload is workload info
+            min_cost = _min_cost(record)
+            hardware_time.append(min_cost)
+            sub_trace = sub_sch.trace
+            sub_insts = sub_trace.insts
+            sub_decisions = sub_trace.decisions
+
+            # NOTE: n=3, but decision=4
+            candidate = record.as_measure_candidate()
+
+            # raise ValueError(f"{e}")
+
+            context = TuneContext(mod=record.workload.mod,
+                                  target=Target(target))
+
+            features, _ = extract_features(context, [candidate])
+            val_dataloader = SegmentDataloder_new(
+                features, shuffle=False, batch_size=1
+            )
+
+            for batch_data, _ in val_dataloader:
+                batch_data = batch_data.to(device)
+                tlp_median_home_14_time.append(tlp_median_home_14(batch_data))
+                tlp_median_14_time.append(tlp_median_14(batch_data))
+                tlp_median_home0_13_time.append(
+                    tlp_median_home0_13(batch_data))
+                tlp_old_14_time.append(tlp_old_14(batch_data))
+
+
+    hardware_time = np.array(hardware_time)
+    tlp_median_home_14_time = np.array(tlp_median_home_14_time)
+    diff_home_14 = hardware_time - tlp_median_home_14_time
+
+    tlp_median_14_time = np.array(tlp_median_14_time)
+    diff_median_14 = hardware_time - tlp_median_14_time
+    tlp_median_home0_13_time = np.array(tlp_median_home0_13_time)
+    diff_home0_13 = hardware_time - tlp_median_home0_13_time
+    tlp_old_14_time = np.array(tlp_old_14_time)
+    diff_old_14 = hardware_time - tlp_old_14_time
+
+    with open(os.path.join(save_path, f'0records.txt'), 'w') as file:
+        file.write("diff hardware from tlp_median_home_14_time mean = " + str(np.mean(diff_home_14)) + "  var = " + str(np.var(diff_home_14)) + '\n')
+        file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
+        file.write("diff hardware from tlp_median_home0_13_time mean = " + str(np.mean(diff_home0_13)) + "  var = " + str(np.var(diff_home0_13)) + '\n')
+        file.write("diff hardware from tlp_old_14_time mean = " + str(np.mean(diff_old_14)) + "  var = " + str(np.var(diff_old_14)) + '\n')
+        # file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
+        # Write each item in the list to a new line in the file
+        file.write("diff_home_14: ")
+        for item in diff_home_14:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("diff_median_14: ")
+        for item in diff_median_14:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("diff_home0_13: ")
+        for item in diff_home0_13:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("diff_old_14: ")
+
+        for item in diff_old_14:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("hardware_time: ")
+        for item in hardware_time:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("tlp_median_home_14_time: ")
+        for item in tlp_median_home_14_time:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("tlp_median_14_time: ")
+        for item in tlp_median_14_time:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("tlp_median_home0_13_time: ")
+        for item in tlp_median_home0_13_time:
+            file.write(str(item) + '  ')
+        file.write('\n')
+        file.write("tlp_old_14_time: ")
+        for item in tlp_old_14_time:
+            file.write(str(item) + '  ')
+
 
 # To make a GFlowNet dataset
 # TODO: need for add workload(in context) info as condition
@@ -77,14 +226,19 @@ def gflownet_data_save(data_path, save_path):
             sub_insts = sub_trace.insts
             sub_decisions = sub_trace.decisions
 
+            print(f"old insts & decision = {sub_decisions}")
             extend_embedding_0 = []
             extend_embedding_1 = []
             ex_cond0 = []
             ex_cond1 = []
             # list(3, 10) (3, 24) (3, 1) -- anno/cuda
-            # (4, 32, 3) (4, 34) (3, 3, 7) -- sample tile
+            # (4, 32, 10) (4, 34) (3, 3, 7) -- sample tile
             embedding_results, embedding_conditions, count_ptr_list = gm(
                 sub_insts, sub_decisions, True)
+
+            print(f"embedding res = {embedding_results}")
+            print(f"embedding cond = {embedding_conditions}")
+            print(f"counter ptr = {count_ptr_list}")
 
             decode = []
             # NOTE: (cond_x1, cond_y1) is anno&cuda shape (cond_x2, cond_y2) is tile shape
@@ -107,7 +261,7 @@ def gflownet_data_save(data_path, save_path):
                     cond_x2 += 1
                     cond_y2 = embedding_conditions[max_len-1].shape[0]  # 34
                     extend_embedding_1.append(
-                        torch.from_numpy(embedding.reshape(-1)))  # reshape (32, 3) -- (96)
+                        torch.from_numpy(embedding))  # append (32, 10)
                     ex_cond1.append(torch.from_numpy(
                         cond.squeeze().astype(float)))
                     # print("Sample Perfect Tile shape: ", extend_embedding_1[-1].shape)
@@ -126,9 +280,9 @@ def gflownet_data_save(data_path, save_path):
             decode += [cond_x1, cond_y1, cond_x2, cond_y2, max_len]
             # NOTE: Padding to max length for embeddings
             # TODO: Need padding condition
-            MAX_NUMBER = 15
-            # NOTE: padding order into MAX_NUMBER
-            while len(order) < MAX_NUMBER:
+            MAX_N = 15
+            # NOTE: padding order into MAX_N
+            while len(order) < MAX_N:
                 order.append(-1)
 
             # stack for convert [(10, ), (10, )..] into (3, 10)
@@ -136,46 +290,47 @@ def gflownet_data_save(data_path, save_path):
                 extend_embedding_0 = torch.stack(extend_embedding_0, 0)
                 ex_cond0 = torch.stack(ex_cond0, 0)
             else:  # first shape is 15*10 -- binary vector
-                extend_embedding_0 = torch.zeros(MAX_NUMBER, 10)
-                ex_cond0 = torch.zeros(MAX_NUMBER, 24)
-            # stack for convert [(96, ), (96, )..] into (6, 96)
+                extend_embedding_0 = torch.zeros(MAX_N, 10)
+                ex_cond0 = torch.zeros(MAX_N, 24)
+            # stack for convert [(32, 10, ), (32, 10, )..] into (6, 32, 10)
             if len(extend_embedding_1) > 0:
                 extend_embedding_1 = torch.stack(extend_embedding_1, 0)
                 ex_cond1 = torch.stack(ex_cond1, 0)
-            else:  # second shape is 15*96 -- binary vector
+            else:  # second shape is 15*320 -- binary vector
 
-                extend_embedding_1 = torch.zeros(MAX_NUMBER, 96)
-                ex_cond1 = torch.zeros(MAX_NUMBER, 34)
+                extend_embedding_1 = torch.zeros(MAX_N, 32, 10)
+                ex_cond1 = torch.zeros(MAX_N, 34)
 
             # NOTE: add embedding 0/1 shape into decode info
             sz1 = extend_embedding_0.shape[0]
             sz2 = extend_embedding_1.shape[0]
             decode += (sz1, sz2)
-
+            m0, m1, m2 = extend_embedding_1.shape
             # NOTE: padding zeros, shape[1] is same -- convert into (15, ..)
             extend_embedding_0 = torch.cat([extend_embedding_0,
-                                            torch.zeros(MAX_NUMBER - sz1, extend_embedding_0.shape[1]).to(extend_embedding_0.device)], 0)
+                                            torch.zeros(MAX_N - sz1, extend_embedding_0.shape[1]).to(extend_embedding_0.device)], 0)
             extend_embedding_1 = torch.cat([extend_embedding_1,
-                                            torch.zeros(MAX_NUMBER - sz2, extend_embedding_1.shape[1]).to(extend_embedding_1.device)], 0)
+                                            torch.zeros(MAX_N - sz2, m1, m2).to(extend_embedding_1.device)], 0)
 
             # NOTE: padding zeros, shape[1] is same -- convert into (15, ..)
             ex_cond0 = torch.cat([ex_cond0,
-                                  torch.zeros(MAX_NUMBER - sz1, ex_cond0.shape[1]).to(ex_cond0.device)], 0)
+                                  torch.zeros(MAX_N - sz1, ex_cond0.shape[1]).to(ex_cond0.device)], 0)
             ex_cond1 = torch.cat([ex_cond1,
-                                  torch.zeros(MAX_NUMBER - sz2, ex_cond1.shape[1]).to(ex_cond1.device)], 0)
+                                  torch.zeros(MAX_N - sz2, ex_cond1.shape[1]).to(ex_cond1.device)], 0)
 
-            # Now extend_embedding_0's shape is (15,10), and extend_embedding_1's shape is (15,96)
+            # Now extend_embedding_0's shape is (15,10), and extend_embedding_1's shape is (15,320)
             # After that, we flatten and concatenate them.
-            # Translate one-hot to label (15, )
+            # Translate one-hot (15, 10) to label (15, ), one-hot (15, 32, 10) to (15, 32)
             extend_embedding_0 = torch.argmax(extend_embedding_0, -1)
-            extend_embedding_1 = extend_embedding_1.flatten()  # Flatten it into (1440, )
+            extend_embedding_1 = torch.argmax(extend_embedding_1, -1)
+            extend_embedding_1 = extend_embedding_1.flatten()  # Flatten it into (15*32)
 
-            # Concatenate them, the last_embedding's shape is (15+15*96, ) = (1455)
+            # Concatenate them, the last_embedding's shape is (15+15*32, ) = (495)
             last_embedding = torch.cat(
                 [extend_embedding_0, extend_embedding_1], 0)
             # NOTE: padding cond0 into 34 = ex_cond1.shape[1]
             ex_cond0 = torch.cat([ex_cond0,
-                                  torch.zeros(MAX_NUMBER, 10).to(ex_cond0.device)], 1)
+                                  torch.zeros(MAX_N, 10).to(ex_cond0.device)], 1)
             last_condition = torch.cat([ex_cond0, ex_cond1], 0)
 
             last_ptr_list = torch.Tensor(count_ptr_list)
@@ -340,8 +495,9 @@ def extract_features(
 
 def restore_embedding(decode_info):
 
-    import torch.nn.functional as Fun
-    MAX_NUMBER = 15
+    MAX_N = 15
+    ROW = 32
+    COL = 10
     # (bs, ...)
     xs, databases_path, decodes, orders, conds, ptrs, target = decode_info
     bs = xs.shape[0]
@@ -356,22 +512,23 @@ def restore_embedding(decode_info):
             xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
 
         cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
-        ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
+        ex_emb0, ex_emb1 = torch.split(x, [MAX_N, MAX_N*ROW], 0)
         ex_cond0, ex_cond1 = torch.split(
-            cond, split_size_or_sections=MAX_NUMBER, dim=0)
+            cond, split_size_or_sections=MAX_N, dim=0)
 
-        ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
-        # convert into one-hot format
-        ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
+        ex_emb1 = ex_emb1.view(MAX_N, -1)
+        # # convert into one-hot format
+        # ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
+        # ex_emb1 = torch.eye(10)[ex_emb1.to(torch.int64)]
 
         emb0_x = emb0_x.item()
         emb1_x = emb1_x.item()
 
-        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
-        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
+        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_N-emb0_x], 0)
+        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_N-emb1_x], 0)
 
-        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_NUMBER-cond_x0], 0)
-        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_NUMBER-cond_x1], 0)
+        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_N-cond_x0], 0)
+        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_N-cond_x1], 0)
 
         cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
         cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
@@ -380,7 +537,8 @@ def restore_embedding(decode_info):
         emb1 = emb1.cpu()
         cond0 = cond0.cpu()
         cond1 = cond1.cpu()
-
+        print(f"emb0 = {emb0}")
+        print(f"emb1 = {emb1}")
         res = []
         emb_conds = []
         p0 = 0  # emb0 position
@@ -403,8 +561,7 @@ def restore_embedding(decode_info):
             ptr = ptr.tolist()
 
         workload_path, candidate_path = database_path
-        if candidate_path == "/root/share/dataset/tlp_dataset0/candidates_64.json":
-            print(f"Wrong position!")
+
         # NOTE: cost 1ms -- not return database, otherwise records is empty list
         database = ms.database.JSONDatabase(path_workload=workload_path,
                                             path_tuning_record=candidate_path)
@@ -426,7 +583,9 @@ def restore_embedding(decode_info):
         sub_insts = sub_trace.insts
         # decision only include stochastic instructions
         sub_decisions = sub_trace.decisions
-        # print(f"old decision = {list(sub_decisions.values())}")
+        print(f"old decision = {list(sub_decisions)}")
+        # print(f"res = {res}")
+
         gm = GflowNetEmbedding()
         new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
                                               embedding_conditions=emb_conds, count_Ptr_results=ptr)
@@ -453,6 +612,7 @@ def restore_embedding(decode_info):
             print(f"Wrong decision, json = {candidate_path}")
             print(f"Wrong decision, instruct = {new_sub_insts}")
             print(f"Wrong decision, decision = {new_sub_decisions}")
+
         from tvm.meta_schedule.database.database import TuningRecord
 
         new_database = database
@@ -510,9 +670,9 @@ def formatter(file, workload_paths, candidate_paths):
 
     return last_embedding, workload_paths, candidate_paths, decode, order, last_condition, last_ptr_list, run_secs
 
-# dataset for GFlowNet: [15+15*96] 15 is 0~9 for anno+cuda
+# dataset for GFlowNet: [15+15*32] 15 is 0~9 for anno+cuda
 # GFlowNet prefer 0~9 format avoid invalid format [1, 0, 1] + extra mask -- GFlowNet output [0.3, 0.5, ..., 0.1] with 10 position
-# 15*96 is 0~1 for tile (质因数分解) allowing [0, 1, 1] not one-hot format -- GFlowNet output [[0.3, 0.7], [0.2, 0.8], [0.4, 0.6]]
+# 15*32 is 0~9 for tile (质因数分解) allowing [0, 1, 1] not one-hot format -- GFlowNet output [[0.3, 0.7], [0.2, 0.8], [0.4, 0.6]]
 
 
 class MLCGflowNetDataset(Dataset):

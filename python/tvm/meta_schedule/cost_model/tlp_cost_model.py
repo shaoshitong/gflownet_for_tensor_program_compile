@@ -57,7 +57,8 @@ def extract_features(
             return 1e10
         return float(np.median([float(s) for s in res.run_secs]))
 
-    new_features = [_feature(x) for x in extractor.extract_from(context, candidates)]
+    new_features = [_feature(x)
+                    for x in extractor.extract_from(context, candidates)]
     new_mean_costs = (
         np.array([_mean_cost(x) for x in results]).astype("float32")
         if results is not None
@@ -66,10 +67,9 @@ def extract_features(
     return new_features, new_mean_costs
 
 
-
 @derived_object
 class tlpCostModel(PyCostModel):
-    # NOTE: cuda:7 is corresponding to 
+    # NOTE: cuda:7 is corresponding to
     # def __init__(self, *, device='cuda:0') -> None:
     def __init__(self, *, device='cuda') -> None:
         super().__init__()
@@ -81,16 +81,17 @@ class tlpCostModel(PyCostModel):
         self.load()
         # NOTE: cann't use "./tlp_model_14.pkl", cann't find file or dir
         # NOTE: update relative path to tlp model
-    def load(self, path: str = "/root/kongdehao/model/min_tlp/tlp_model_73.pth") -> None:
-    # def load(self, path: str = "/root/kongdehao/model/tlp/tlp_model_73.pth") -> None:
+
+    # def load(self, path: str = "/root/kongdehao/model/tlp/median/tlp_median_19.pth") -> None:
+    def load(self, path: str = "/root/kongdehao/model/tlp/median/tlp_median_home0_13.pth") -> None:
         self.model = torch.load(path, map_location=self.device)
         # with open(path, 'rb') as f:
-        #     self.model = pickle.load(f)  
+        #     self.model = pickle.load(f)
         # self.model.to(self.device)
-          
+
     def save(self, path: str) -> None:
         pass
-    
+
     def update(
         self,
         context: TuneContext,
@@ -98,7 +99,7 @@ class tlpCostModel(PyCostModel):
         results: List[RunnerResult],
     ) -> None:
         pass
-    
+
     @torch.no_grad()
     def predict(self, context: TuneContext, candidates: List[MeasureCandidate]) -> np.ndarray:
         self.model.eval()
@@ -108,9 +109,9 @@ class tlpCostModel(PyCostModel):
             features, shuffle=False
         )
         pred_results = []
-        for batch_data,_ in val_dataloader:
+        for batch_data, _ in val_dataloader:
             batch_data = batch_data.to(self.device)
             outputs = self.model(batch_data)
             pred_results.extend(outputs.detach().cpu().numpy())
-        print(f"TLP prediction = {pred_results}")
+        # print(f"TLP prediction = {pred_results}")
         return pred_results

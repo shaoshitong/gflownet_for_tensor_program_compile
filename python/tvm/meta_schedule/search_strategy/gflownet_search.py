@@ -236,9 +236,9 @@ def PredictNormalizedScore(candidates,context,cost_model):
     _ = Profiler.timeit("EvoSearch/Evolve/PredictNormalizedScore")
     assert len(candidates) != 0, "Candidates given for score prediction can not be empty list!"
     scores = cost_model.predict(context, AssembleCandidates(candidates))
-    print(f"TLP predict = {scores}")
+    # print(f"TLP predict = {scores}")
     scores = np.clip(scores,0.0,np.inf)
-    print(f"TLP predict normal score = {scores}")
+    # print(f"TLP predict normal score = {scores}")
     return scores
 
 # datas is PerThreadData, measures_trace from databases, pp is ThreadedTraceApply

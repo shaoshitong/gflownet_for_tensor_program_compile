@@ -156,7 +156,8 @@ class EmbeddingAnnotation:
             if sub_inst.kind == InstructionKind.get("SampleCategorical"):
                 if sub_inst.outputs[0] in annotations:
                     embedding_result = embedding_results[count_ptr]
-                    new_value = np.argmax(embedding_result)
+                    # new_value = np.argmax(embedding_result)
+                    new_value = embedding_result
                     new_value = tvm.tir.const(new_value, dtype='int32')
                     new_insts.append(sub_inst)
                     new_decisions.append(new_value)
@@ -167,7 +168,8 @@ class EmbeddingAnnotation:
             var_rv = ann_inst.inputs[1]
             sample_categorical = sample_insts[var_rv]
             embedding_result = embedding_results[count_ptr]
-            new_value = np.argmax(embedding_result)
+            # new_value = np.argmax(embedding_result)
+            new_value = embedding_result
             new_value = tvm.tir.const(new_value, dtype='int32')
             new_insts.append(sample_categorical)
             new_decisions.append(new_value)

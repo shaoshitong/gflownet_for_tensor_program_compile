@@ -11,12 +11,12 @@ import numpy as np
 import tvm
 from tvm.meta_schedule.database import JSONDatabase
 from tvm.meta_schedule.runner import RunnerResult
-from tvm.meta_schedule import TuneContext, FeatureExtractor,MeasureCandidate
+from tvm.meta_schedule import TuneContext, FeatureExtractor, MeasureCandidate
 from tvm.target import Target
 from tvm.meta_schedule.feature_extractor import PerStoreFeature
 from tvm.runtime import NDArray
 from tvm.meta_schedule.utils import shash2hex
-import multiprocessing 
+import multiprocessing
 from multiprocessing.pool import ThreadPool
 
 
@@ -45,12 +45,12 @@ class FeatureGroup:
         group_hash: str,
         features: List[np.ndarray],
         costs: np.ndarray,
-        min_costs = None
+        min_costs=None
     ) -> None:
         self.group_hash = group_hash
         self.features = features
         self.costs = costs
-        self.min_cost = np.min(costs) if min_costs==None else min_costs
+        self.min_cost = np.min(costs) if min_costs == None else min_costs
 
     def append(  # pylint: disable=missing-function-docstring
         self,
@@ -62,7 +62,7 @@ class FeatureGroup:
         self.min_cost = np.min(self.costs)
 
     def to_json(self):
-        return {"features": [feature.tolist() for feature in self.features], "mean_costs":self.costs.tolist(), "min_cost":float(self.min_cost) } 
+        return {"features": [feature.tolist() for feature in self.features], "mean_costs": self.costs.tolist(), "min_cost": float(self.min_cost)}
 
     # @classmethod
     # def from_json(cls, json_obj):
@@ -71,9 +71,7 @@ class FeatureGroup:
     def from_json(cls, json_obj):
         key = list(json_obj.keys())[0]
         data = list(json_obj.values())[0]
-        return cls(key, data["features"], data["mean_costs"], data["min_cost"])        
-        
-
+        return cls(key, data["features"], data["mean_costs"], data["min_cost"])
 
 
 def extract_features(
@@ -104,10 +102,10 @@ def extract_features(
 
     def _feature(feature: NDArray) -> np.ndarray:
         return feature.numpy().astype("float32")
-    
+
     # # NOTE: score is runtime, val is variance, tau is temperature factor
     # def normalize_score(score,
-    #                     _mean = 0.003680646535107316, 
+    #                     _mean = 0.003680646535107316,
     #                     _val = 0.0012118761480652196,
     #                     _min = 2.8831801089918256e-06,
     #                     _max = 4.567233072666666,
@@ -120,15 +118,15 @@ def extract_features(
             return 1e10
         # NOTE: convert into min()
         # return float(np.median([float(s) for s in res.run_secs]))
-        # return float(normalize_score(torch.Tensor([np.min([float(s) for s in res.run_secs])])))
         return float(np.min([float(s) for s in res.run_secs]))
-    
+
     # def _mean_cost(res: RunnerResult) -> float:
     #     if not res.run_secs:
     #         return 1e10
     #     return float(np.median([float(s) for s in res.run_secs]))
 
-    new_features = [_feature(x) for x in extractor.extract_from(context, candidates)]
+    new_features = [_feature(x)
+                    for x in extractor.extract_from(context, candidates)]
     new_mean_costs = (
         np.array([_mean_cost(x) for x in results]).astype("float32")
         if results is not None
@@ -136,17 +134,19 @@ def extract_features(
     )
     return new_features, new_mean_costs
 
-def handle_json(model_dir:str):
+
+def handle_json(model_dir: str):
     workload_paths = []
     candidate_path = []
-    json_files = sorted(glob.glob(os.path.join(model_dir, "*.json"),recursive=True))
+    json_files = sorted(glob.glob(os.path.join(
+        model_dir, "*.json"), recursive=True))
     for json_file in json_files:
         if json_file.endswith("_workload.json"):
             workload_paths.append(json_file)
         elif json_file.endswith("_candidates.json"):
             candidate_path.append(json_file)
 
-    #handhle json file
+    # handhle json file
     extractor_feature = PerStoreFeature(extract_workload=True)
     for workload_path in tqdm(workload_paths):
         try:
@@ -165,21 +165,25 @@ def handle_json(model_dir:str):
             continue
         for record in tuning_records:
             candidates.append(record.as_measure_candidate())
-            results.append(RunnerResult(run_secs=record.run_secs, error_msg=None))
+            results.append(RunnerResult(
+                run_secs=record.run_secs, error_msg=None))
         assert len(candidates) == len(results)
-        context = TuneContext(mod=tuning_records[0].workload.mod, target=Target(args.target))
+        context = TuneContext(
+            mod=tuning_records[0].workload.mod, target=Target(args.target))
         features, mean_costs = extract_features(
             context, candidates, results, extractor_feature
         )
-        all_dataset = add_to_group(all_dataset, features, mean_costs, shash2hex(context.mod))
+        all_dataset = add_to_group(
+            all_dataset, features, mean_costs, shash2hex(context.mod))
 
-        #save feature json file  
-        model_name,_ = os.path.splitext(os.path.basename(model_dir))
-        file_name, _ =os.path.splitext(os.path.basename(workload_path))
-        file_name = file_name.rsplit('_',1)[0]
-        need_saved = {k:v.to_json() for k, v in all_dataset.items()}
+        # save feature json file
+        model_name, _ = os.path.splitext(os.path.basename(model_dir))
+        file_name, _ = os.path.splitext(os.path.basename(workload_path))
+        file_name = file_name.rsplit('_', 1)[0]
+        need_saved = {k: v.to_json() for k, v in all_dataset.items()}
         with open(f'{args.save_folder}/{model_name}_{file_name}_train_and_val.json', 'w') as f:
             json.dump(need_saved, f)
+
 
 def add_to_group(
     data: Dict[str, FeatureGroup],
@@ -203,28 +207,31 @@ def add_to_group(
 def make_all_dataset():
     os.makedirs(args.save_folder, exist_ok=True)
 
-    #get path
+    # get path
     # NOTE: Pool() is BUG, replace it with ThreadPool()
-    # pool = multiprocessing.Pool()
-    pool = ThreadPool()
-    
+    # pool = multiprocessing.Pool(112)
+    pool = ThreadPool(112)
+
     model_dirs = glob.glob(os.path.join(args.dataset_path, "*"))
     for model_dir in model_dirs:
         # handle_json(model_dir)
         pool.apply_async(handle_json, args=(model_dir,))
     pool.close()
     pool.join()
-       
+
 
 if __name__ == "__main__":
     parse = argparse.ArgumentParser()
-    parse.add_argument("--dataset_path",type=str, default= '/root/share/dataset/measure_candidate_v2')
-    parse.add_argument("--save_folder", type=str, default='')
-    parse.add_argument("--target",type=str, default='cuda')
+    parse.add_argument("--dataset_path", type=str,
+                       default='/root/share/dataset/measure_candidate')
+    parse.add_argument("--save_folder", type=str,
+                       default='/root/share/dataset/0test_extract_features/extract_features_min')
+    parse.add_argument("--target", type=str, default='cuda')
 
     args = parse.parse_args()
 
-    if args.save_folder == '':
-        args.save_folder = os.path.join(os.path.dirname(args.dataset_path), 'extract_features_v2')
+    # if args.save_folder == '':
+    #     args.save_folder = os.path.join(os.path.dirname(
+    #         args.feature_path), 'extract_features_v2_min')
 
-    make_all_dataset()    
+    make_all_dataset()
