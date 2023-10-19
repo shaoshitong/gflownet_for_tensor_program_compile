@@ -171,4 +171,6 @@ class EmbeddingCUDABind:
             new_insts.append(sample_inst)
             new_decisions.append(new_value)
 
+        if len(new_insts) == len(list(decisions.values())):
+            print(f"Same len for old decision & new decision in CUDA Bind")
         return new_insts, new_decisions

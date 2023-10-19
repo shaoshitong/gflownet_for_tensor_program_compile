@@ -43,12 +43,26 @@ def measure_tlp(data_path, save_path):
     assert os.path.exists(data_path), f"{data_path} not exists!"
     # database include candidates(trace, instructions&decision) & workload(subgraph)
     databases = load_all_files(data_path)
-    gm = GflowNetEmbedding()
+
     print("Successfully Load Databases!")
-    datasets = []
-    count_ptr = 0
 
     device = "cuda"
+
+    tlp_median_57_path = "/root/kongdehao/model/0test_tlp/tlp_median_57.pth"
+    tlp_median_57 = torch.load(tlp_median_57_path, map_location=device)
+    tlp_median_57.to(device)
+
+    tlp_min_77_path = "/root/kongdehao/model/0test_tlp/tlp_min_77.pth"
+    tlp_min_77 = torch.load(tlp_min_77_path, map_location=device)
+    tlp_min_77.to(device)
+
+    tlp_v2_median_69_path = "/root/kongdehao/model/0test_tlp/tlp_v2_median_69.pth"
+    tlp_v2_median_69 = torch.load(tlp_v2_median_69_path, map_location=device)
+    tlp_v2_median_69.to(device)
+
+    tlp_v2_min_44_path = "/root/kongdehao/model/0test_tlp/tlp_v2_min_44.pth"
+    tlp_v2_min_44 = torch.load(tlp_v2_min_44_path, map_location=device)
+    tlp_v2_min_44.to(device)
 
     tlp_median_home_14_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
 
@@ -76,7 +90,6 @@ def measure_tlp(data_path, save_path):
     # Modify the output_device
     tlp_old_14.output_device = torch.device('cuda:0')
 
-
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
@@ -86,13 +99,24 @@ def measure_tlp(data_path, save_path):
             return 1e10
         return float(np.min([float(s) for s in res.run_secs]))
 
+    # get median cost time from multiple measure runtime
+    def _median_cost(res) -> float:
+        if not res.run_secs:
+            return 1e10
+        return float(np.median([float(s) for s in res.run_secs]))
+
     hardware_time = []
     tlp_median_home_14_time = []
     tlp_median_14_time = []
     tlp_median_home0_13_time = []
     tlp_old_14_time = []
-    target = "cuda"
+    tlp_median_57_time = []
+    tlp_min_77_time = []
+    tlp_v2_median_69_time = []
+    tlp_v2_min_44_time = []
 
+    target = "cuda"
+    counter = 0
     for database in databases:
         # database made up of records, including candidates info
         records = database.get_all_tuning_records()
@@ -101,7 +125,14 @@ def measure_tlp(data_path, save_path):
             # measure_candidate for
             sub_sch = record.as_measure_candidate().sch
             # record.workload is workload info
-            min_cost = _min_cost(record)
+            # min_cost = _min_cost(record)
+            min_cost = _median_cost(record)
+
+            # NOTE: pass invalid run_sec
+            if min_cost == 1e10:
+                print(f"pass invalid run_sec in {counter}")
+                continue
+
             hardware_time.append(min_cost)
             sub_trace = sub_sch.trace
             sub_insts = sub_trace.insts
@@ -110,10 +141,8 @@ def measure_tlp(data_path, save_path):
             # NOTE: n=3, but decision=4
             candidate = record.as_measure_candidate()
 
-            # raise ValueError(f"{e}")
-
             context = TuneContext(mod=record.workload.mod,
-                                  target=Target(target))
+                                  target=Target(target), num_threads=112)
 
             features, _ = extract_features(context, [candidate])
             val_dataloader = SegmentDataloder_new(
@@ -122,29 +151,72 @@ def measure_tlp(data_path, save_path):
 
             for batch_data, _ in val_dataloader:
                 batch_data = batch_data.to(device)
-                tlp_median_home_14_time.append(tlp_median_home_14(batch_data))
-                tlp_median_14_time.append(tlp_median_14(batch_data))
+                tlp_median_home_14_time.append(
+                    tlp_median_home_14(batch_data).item())
+                tlp_median_14_time.append(tlp_median_14(batch_data).item())
                 tlp_median_home0_13_time.append(
-                    tlp_median_home0_13(batch_data))
-                tlp_old_14_time.append(tlp_old_14(batch_data))
+                    tlp_median_home0_13(batch_data).item())
+                tlp_old_14_time.append(tlp_old_14(batch_data).item())
+                
+                tlp_median_57_time.append(tlp_median_57(batch_data).item())
+                tlp_min_77_time.append(tlp_min_77(batch_data).item())
+                tlp_v2_median_69_time.append(tlp_v2_median_69(batch_data).item())
+                tlp_v2_min_44_time.append(tlp_v2_min_44(batch_data).item())
 
+            print(f"Finish counter = {counter}")
+            counter += 1
 
-    hardware_time = np.array(hardware_time)
-    tlp_median_home_14_time = np.array(tlp_median_home_14_time)
+    def normalize(arr):
+        min_val = np.min(arr)
+        max_val = np.max(arr)
+        normalized_arr = (arr - min_val) / (max_val - min_val)
+        return normalized_arr
+
+    hardware_time = normalize(np.array(hardware_time))
+    tlp_median_57_time = normalize(np.array(tlp_median_57_time))
+    diff_tlp_median_57_time = hardware_time - tlp_median_57_time
+
+    hardware_time = normalize(np.array(hardware_time))
+    tlp_min_77_time = normalize(np.array(tlp_min_77_time))
+    diff_tlp_min_77_time = hardware_time - tlp_min_77_time
+
+    hardware_time = normalize(np.array(hardware_time))
+    tlp_v2_median_69_time = normalize(np.array(tlp_v2_median_69_time))
+    diff_tlp_v2_median_69_time = hardware_time - tlp_v2_median_69_time
+
+    hardware_time = normalize(np.array(hardware_time))
+    tlp_v2_min_44_time = normalize(np.array(tlp_v2_min_44_time))
+    diff_tlp_v2_min_44_time = hardware_time - tlp_v2_min_44_time
+
+    hardware_time = normalize(np.array(hardware_time))
+    tlp_median_home_14_time = normalize(np.array(tlp_median_home_14_time))
     diff_home_14 = hardware_time - tlp_median_home_14_time
 
-    tlp_median_14_time = np.array(tlp_median_14_time)
+    tlp_median_14_time = normalize(np.array(tlp_median_14_time))
     diff_median_14 = hardware_time - tlp_median_14_time
-    tlp_median_home0_13_time = np.array(tlp_median_home0_13_time)
+    tlp_median_home0_13_time = normalize(np.array(tlp_median_home0_13_time))
     diff_home0_13 = hardware_time - tlp_median_home0_13_time
-    tlp_old_14_time = np.array(tlp_old_14_time)
+    tlp_old_14_time = normalize(np.array(tlp_old_14_time))
     diff_old_14 = hardware_time - tlp_old_14_time
 
-    with open(os.path.join(save_path, f'0records.txt'), 'w') as file:
-        file.write("diff hardware from tlp_median_home_14_time mean = " + str(np.mean(diff_home_14)) + "  var = " + str(np.var(diff_home_14)) + '\n')
-        file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
-        file.write("diff hardware from tlp_median_home0_13_time mean = " + str(np.mean(diff_home0_13)) + "  var = " + str(np.var(diff_home0_13)) + '\n')
-        file.write("diff hardware from tlp_old_14_time mean = " + str(np.mean(diff_old_14)) + "  var = " + str(np.var(diff_old_14)) + '\n')
+    with open(os.path.join(save_path, f'0records_median_run_8.txt'), 'w') as file:
+        file.write("diff hardware from diff_tlp_median_57_time mean = " +
+                   str(np.mean(diff_tlp_median_57_time)) + "  var = " + str(np.var(diff_tlp_median_57_time)) + '\n')
+        file.write("diff hardware from diff_tlp_min_77_time mean = " +
+                   str(np.mean(diff_tlp_min_77_time)) + "  var = " + str(np.var(diff_tlp_min_77_time)) + '\n')
+        file.write("diff hardware from diff_tlp_v2_median_69_time mean = " +
+                   str(np.mean(diff_tlp_v2_median_69_time)) + "  var = " + str(np.var(diff_tlp_v2_median_69_time)) + '\n')
+        file.write("diff hardware from diff_tlp_v2_min_44_time mean = " +
+                   str(np.mean(diff_tlp_v2_min_44_time)) + "  var = " + str(np.var(diff_tlp_v2_min_44_time)) + '\n')
+
+        file.write("diff hardware from tlp_median_home_14_time mean = " +
+                   str(np.mean(diff_home_14)) + "  var = " + str(np.var(diff_home_14)) + '\n')
+        file.write("diff hardware from tlp_median_14_time mean = " +
+                   str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
+        file.write("diff hardware from tlp_median_home0_13_time mean = " +
+                   str(np.mean(diff_home0_13)) + "  var = " + str(np.var(diff_home0_13)) + '\n')
+        file.write("diff hardware from tlp_old_14_time mean = " +
+                   str(np.mean(diff_old_14)) + "  var = " + str(np.var(diff_old_14)) + '\n')
         # file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
         # Write each item in the list to a new line in the file
         file.write("diff_home_14: ")

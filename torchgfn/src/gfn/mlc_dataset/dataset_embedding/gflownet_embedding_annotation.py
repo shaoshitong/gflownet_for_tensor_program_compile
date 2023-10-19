@@ -175,4 +175,6 @@ class EmbeddingAnnotation:
             new_decisions.append(new_value)
             count_ptr += 1
 
+        if len(new_insts) == len(list(decisions.values())):
+            print(f"Same len for old decision & new decision in annotation")
         return new_insts, new_decisions

@@ -22,7 +22,7 @@ if __name__ == "__main__":
     # NOTE: change to you data path
     # 每个candidate对应一个workload，一个网络结构 对应多个workload
     # 不同的candidates 差异存在于primitive和decision
-    databases = load_all_files("/root/share/dataset/debug_measure_candidate")
+    databases = load_all_files("/root/share/dataset/decode_info")
 
     import copy
     import tvm

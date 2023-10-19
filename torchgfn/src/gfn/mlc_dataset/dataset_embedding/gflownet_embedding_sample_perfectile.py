@@ -205,10 +205,15 @@ class EmbeddingSamplePerfectTile:
 
                 # Unembedding
                 for i in range(len(embedding_result)):
-                    if embedding_result[i] != 0:
-                        new_np_sub_value[embedding_result[i]-1] *= factors[i]
+                    if embedding_result[i] == 0:
+                        break
+                    
+                    new_np_sub_value[embedding_result[i]-1] *= factors[i]
                 new_insts.append(sub_inst)
                 new_decisions.append([tvm.tir.const(i, dtype='int32')
                                      for i in new_np_sub_value.tolist()])
                 count_ptr += 1
+        
+        if len(new_insts) == len(list(decisions.values())):
+            print(f"Same len for old decision & new decision in Sample Perfect Tile")
         return new_insts, new_decisions

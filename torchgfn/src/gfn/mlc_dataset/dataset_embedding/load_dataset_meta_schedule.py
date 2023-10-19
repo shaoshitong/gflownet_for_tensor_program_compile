@@ -50,7 +50,7 @@ def load_workload_and_candidate(result):
         path_workload=workload_path, path_tuning_record=candidate_path)
 
     records = database.get_all_tuning_records()
-    print(f"len of records = {len(records)}")
+    print(f"load len of records = {len(records)}")
     return database
 
 
@@ -77,12 +77,12 @@ def load_all_files(work_dir):
 
     # NOTE: not work! len == 0
     # pool = multiprocessing.Pool(112)
-    
+
     # NOTE: work! -- len > 0
     pool = ThreadPool(112)
     databases = pool.map(load_workload_and_candidate, results)
     pool.close()
-    
+
     # NOTE: work! -- len > 0
     # databases = []
     # for result in results:
@@ -90,10 +90,10 @@ def load_all_files(work_dir):
     #     # database = load_workload_and_candidate(*result)
     #     databases.append(database)
 
-    for database in databases:
-        # database made up of records, including candidates info
-        records = database.get_all_tuning_records()
-        print(f"len of records = {len(records)}")
+    # for database in databases:
+    #     # database made up of records, including candidates info
+    #     records = database.get_all_tuning_records()
+    #     print(f"len of records = {len(records)}")
     return databases
 
 

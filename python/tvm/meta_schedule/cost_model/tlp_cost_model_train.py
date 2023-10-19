@@ -472,7 +472,7 @@ def train(train_loader, val_dataloader, device, logger):
             min_loss = valid_loss
 
     # checkpoint = {"tlp" : best_net.state_dict()}
-    torch.save(best_net, "%s/tlp_median_%d.pth" %
+    torch.save(best_net, "%s/tlp_min_%d.pth" %
                (args.save_model_path, best_it))
     # with open(save_model_path, 'wb') as f:
     #     pickle.dump(best_net.cpu(), f)
@@ -499,7 +499,7 @@ if __name__ == "__main__":
     parser.add_argument("--cuda", type=str, default='cuda:0')
     # NOTE: Use you defined dataset path
     parser.add_argument("--dataset_path", type=str,
-                        default='/root/share/dataset/0test_extract_features/extract_features_median')
+                        default='/root/share/dataset/0test_extract_features/extract_features_min')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
