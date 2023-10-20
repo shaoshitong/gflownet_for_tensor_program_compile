@@ -1,0 +1,8 @@
+Rank Loss  hardware from diff_tlp_median_57_time = tensor(2348.1929, device='cuda:0')
+Rank Loss hardware from diff_tlp_min_77_time = tensor(2270.5020, device='cuda:0')
+Rank Loss hardware from diff_tlp_v2_median_69_time = tensor(2286.3806, device='cuda:0')
+Rank Loss hardware from diff_tlp_v2_min_44_time = tensor(2375.7231, device='cuda:0')
+Rank Loss hardware from tlp_median_home_14_time = tensor(1302.2227, device='cuda:0')
+Rank Loss hardware from `tlp_median_14_time` = tensor(`782`.6945, device='cuda:0')
+Rank Loss hardware from tlp_median_home0_13_time = tensor(1288.5170, device='cuda:0')
+Rank Loss hardware from tlp_old_14_time = tensor(1284.1407, device='cuda:0')

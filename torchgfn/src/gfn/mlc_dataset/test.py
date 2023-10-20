@@ -43,6 +43,7 @@ if __name__ == "__main__":
                 sub_decisions = sub_trace.decisions
                 print(f"old insts & decisions = {sub_decisions}")
                 AA = (list(deep_copy_map(sub_trace.decisions).values()))
+                print(f"old decision list = {AA}")
                 from tvm.tir.schedule import InstructionKind
                 gm = GflowNetEmbedding()
                 # True: encode()
@@ -60,20 +61,23 @@ if __name__ == "__main__":
                     print(AA)
                     flag = False
                     break
-                new_sub_decisions = deep_copy_map(sub_decisions)
+                new_sub_decisions = dict(sub_decisions)
                 for key, value in new_sub_decisions.items():
                     if key.kind == InstructionKind.get("SampleCategorical"):
                         new_sub_decisions[key] = tvm.tir.const(
                             -1, dtype='int32')
 
+                print(
+                    f"random decision list = {list(new_sub_decisions.values())}")
                 # NOTE: following is training & model
                 max_value = max(max_value, len(embedding_results))
                 # False: decode(), new_insts & sub_decisions are list
                 # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
                 #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
-                new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
+                new_sub_insts, new_sub_decisions = gm(sub_insts, new_sub_decisions, False, embedding_results=embedding_results,
                                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
 
+                print(f"new decision list = {new_sub_decisions}")
                 # Must use with_decision() to set sub_trace
                 for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
                     sub_trace = sub_trace.with_decision(
@@ -81,6 +85,7 @@ if __name__ == "__main__":
 
                 # print(f"len of old decision = {len(AA)}")
                 BB = list(sub_trace.decisions.values())
+                print(f"new sub_trace decision list = {BB}")
                 # print(f"len of new decision = {len(BB)}")
                 print(check_decision_same(AA, new_sub_decisions), max_value)
                 if not check_decision_same(AA, new_sub_decisions):

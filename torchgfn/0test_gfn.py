@@ -44,7 +44,7 @@ if __name__ == "__main__":
     state_len = 15 * 1 + 15 * 96
     action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
+    tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
 
     device = "cuda"
     # with open(tlp_path, 'rb') as f:

@@ -39,6 +39,121 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # TODO: need for add workload(in context) info as condition
 
 
+class LambdaRankLoss(nn.Module):
+    def __init__(self, device):
+        super().__init__()
+        self.device = device
+
+    def lamdbaRank_scheme(self, G, D, *args):
+        return torch.abs(torch.pow(D[:, :, None], -1.) - torch.pow(D[:, None, :], -1.)) * torch.abs(
+            G[:, :, None] - G[:, None, :])
+
+    def forward(self, preds, labels, k=None, eps=1e-10, mu=10., sigma=1.):
+        device = self.device
+        preds = preds[None, :]
+        labels = labels[None, :]
+        y_pred = preds.clone()
+        y_true = labels.clone()
+
+        y_pred_sorted, indices_pred = y_pred.sort(descending=True, dim=-1)
+        y_true_sorted, _ = y_true.sort(descending=True, dim=-1)
+
+        true_sorted_by_preds = torch.gather(y_true, dim=1, index=indices_pred)
+        true_diffs = true_sorted_by_preds[:, :,
+                                          None] - true_sorted_by_preds[:, None, :]
+        padded_pairs_mask = torch.isfinite(true_diffs)
+
+        padded_pairs_mask = padded_pairs_mask & (true_diffs > 0)
+        ndcg_at_k_mask = torch.zeros(
+            (y_pred.shape[1], y_pred.shape[1]), dtype=torch.bool, device=device)
+        ndcg_at_k_mask[:k, :k] = 1
+
+        true_sorted_by_preds.clamp_(min=0.)
+        y_true_sorted.clamp_(min=0.)
+
+        pos_idxs = torch.arange(1, y_pred.shape[1] + 1).to(device)
+        D = torch.log2(1. + pos_idxs.float())[None, :]
+        maxDCGs = torch.sum(
+            ((torch.pow(2, y_true_sorted) - 1) / D)[:, :k], dim=-1).clamp(min=eps)
+        G = (torch.pow(2, true_sorted_by_preds) - 1) / maxDCGs[:, None]
+
+        weights = self.lamdbaRank_scheme(G, D, mu, true_sorted_by_preds)
+
+        scores_diffs = (
+            y_pred_sorted[:, :, None] - y_pred_sorted[:, None, :]).clamp(min=-1e8, max=1e8)
+        scores_diffs[torch.isnan(scores_diffs)] = 0.
+        weighted_probas = (torch.sigmoid(
+            sigma * scores_diffs).clamp(min=eps) ** weights).clamp(min=eps)
+        losses = torch.log2(weighted_probas)
+        masked_losses = losses[padded_pairs_mask & ndcg_at_k_mask]
+        loss = -torch.sum(masked_losses)
+        return loss
+
+
+def compute_rankloss():
+
+    def read_specific_line(filename, line_number):
+        # 打开文件并读取特定行的内容
+        with open(filename, 'r') as file:
+            lines = file.readlines()
+            specific_line = lines[line_number - 1]  # 行号从1开始，所以需要减1
+            # 使用split方法将字符串拆分为两部分
+        parts = specific_line.split(' ', 1)
+        # print(f"parts[1] = {parts[1]}")
+        # 提取数字并转换为ndarray类型
+        numbers = torch.tensor([float(num)
+                                for num in parts[1].split('  ') if num.strip()]).to("cuda")
+
+        return numbers
+
+    # 读取文件中的第3行，并将其中的数字转换为ndarray类型
+    filename = '/root/kongdehao/model/0test_tlp/0records_median_run_8.txt'
+    line_number = 17
+    tlp_old_14 = read_specific_line(filename, line_number)
+
+    line_number = 16
+    tlp_median_home0_13 = read_specific_line(filename, line_number)
+
+    line_number = 15
+    tlp_median_14 = read_specific_line(filename, line_number)
+
+    line_number = 14
+    tlp_median_home_14 = read_specific_line(filename, line_number)
+
+    line_number = 13
+    hardware = read_specific_line(filename, line_number)
+    device = "cuda"
+    loss_func = LambdaRankLoss(device)
+    loss_tlp_old_14 = loss_func(tlp_old_14, hardware)
+
+    loss_tlp_median_home0_13 = loss_func(tlp_median_home0_13, hardware)
+
+    loss_tlp_median_14 = loss_func(tlp_median_14, hardware)
+
+    loss_tlp_median_home_14 = loss_func(tlp_median_home_14, hardware)
+
+    save_path = "/root/kongdehao/model/0test_tlp"
+    with open(os.path.join(save_path, f'0records_rank_loss_4.txt'), 'w') as file:
+        # file.write("diff hardware from diff_tlp_median_57_time mean = " +
+        #            str(np.mean(diff_tlp_median_57_time)) + "  var = " + str(np.var(diff_tlp_median_57_time)) + '\n')
+        # file.write("diff hardware from diff_tlp_min_77_time mean = " +
+        #            str(np.mean(diff_tlp_min_77_time)) + "  var = " + str(np.var(diff_tlp_min_77_time)) + '\n')
+        # file.write("diff hardware from diff_tlp_v2_median_69_time mean = " +
+        #            str(np.mean(diff_tlp_v2_median_69_time)) + "  var = " + str(np.var(diff_tlp_v2_median_69_time)) + '\n')
+        # file.write("diff hardware from diff_tlp_v2_min_44_time mean = " +
+        #            str(np.mean(diff_tlp_v2_min_44_time)) + "  var = " + str(np.var(diff_tlp_v2_min_44_time)) + '\n')
+
+        file.write("Rank Loss hardware from tlp_median_home_14_time = " +
+                   str(loss_tlp_median_home_14) + '\n')
+        file.write("Rank Loss hardware from tlp_median_14_time = " +
+                   str(loss_tlp_median_14) + '\n')
+        file.write("Rank Loss hardware from tlp_median_home0_13_time = " +
+                   str(loss_tlp_median_home0_13) + '\n')
+        file.write("Rank Loss hardware from tlp_old_14_time = " +
+                   str(loss_tlp_old_14) + '\n')
+    print(f"Finish!!!")
+
+
 def measure_tlp(data_path, save_path):
     assert os.path.exists(data_path), f"{data_path} not exists!"
     # database include candidates(trace, instructions&decision) & workload(subgraph)
@@ -114,6 +229,16 @@ def measure_tlp(data_path, save_path):
     tlp_min_77_time = []
     tlp_v2_median_69_time = []
     tlp_v2_min_44_time = []
+    import wandb
+    wandb_project = "Test various TLP performance with Rank Loss"
+    use_wandb = len(wandb_project) > 0
+    if use_wandb:
+        wandb.init(project=wandb_project)
+        wandb.config.update({
+            "learning_rate": 1e-3,
+            "architecture": "EBM GFlowNet",
+            "dataset": "GFlowNet Dataset",
+        })
 
     target = "cuda"
     counter = 0
@@ -157,11 +282,21 @@ def measure_tlp(data_path, save_path):
                 tlp_median_home0_13_time.append(
                     tlp_median_home0_13(batch_data).item())
                 tlp_old_14_time.append(tlp_old_14(batch_data).item())
-                
+
                 tlp_median_57_time.append(tlp_median_57(batch_data).item())
                 tlp_min_77_time.append(tlp_min_77(batch_data).item())
-                tlp_v2_median_69_time.append(tlp_v2_median_69(batch_data).item())
+                tlp_v2_median_69_time.append(
+                    tlp_v2_median_69(batch_data).item())
                 tlp_v2_min_44_time.append(tlp_v2_min_44(batch_data).item())
+                # log metrics to wandb
+                wandb.log({"tlp_median_home_14_time": tlp_median_home_14_time[-1],
+                            "tlp_median_14_time": tlp_median_14_time[-1],
+                           "tlp_median_home0_13_time": tlp_median_home0_13_time[-1],
+                            "tlp_old_14_time": tlp_old_14_time[-1],
+                           "tlp_median_57_time": tlp_median_57_time[-1], 
+                           "tlp_min_77_time": tlp_min_77_time[-1],
+                           "tlp_v2_median_69_time": tlp_v2_median_69_time[-1], 
+                           "tlp_v2_min_44_time": tlp_v2_min_44_time[-1]})
 
             print(f"Finish counter = {counter}")
             counter += 1
@@ -172,89 +307,139 @@ def measure_tlp(data_path, save_path):
         normalized_arr = (arr - min_val) / (max_val - min_val)
         return normalized_arr
 
-    hardware_time = normalize(np.array(hardware_time))
-    tlp_median_57_time = normalize(np.array(tlp_median_57_time))
-    diff_tlp_median_57_time = hardware_time - tlp_median_57_time
+    hardware = torch.tensor(hardware_time).to(device)
+    tlp_median_57_time = torch.tensor(tlp_median_57_time).to(device)
+    tlp_min_77_time = torch.tensor(tlp_min_77_time).to(device)
+    tlp_v2_median_69_time = torch.tensor(tlp_v2_median_69_time).to(device)
+    tlp_v2_min_44_time = torch.tensor(tlp_v2_min_44_time).to(device)
+    tlp_median_home_14_time = torch.tensor(tlp_median_home_14_time).to(device)
+    tlp_median_14_time = torch.tensor(tlp_median_14_time).to(device)
+    tlp_median_home0_13_time = torch.tensor(
+        tlp_median_home0_13_time).to(device)
+    tlp_old_14_time = torch.tensor(tlp_old_14_time).to(device)
 
-    hardware_time = normalize(np.array(hardware_time))
-    tlp_min_77_time = normalize(np.array(tlp_min_77_time))
-    diff_tlp_min_77_time = hardware_time - tlp_min_77_time
+    loss_func = LambdaRankLoss(device)
+    loss_median_57 = loss_func(tlp_median_57_time, hardware)
+    loss_min_77 = loss_func(tlp_min_77_time, hardware)
+    loss_v2_median_69 = loss_func(tlp_v2_median_69_time, hardware)
+    loss__v2_min_44 = loss_func(tlp_v2_min_44_time, hardware)
 
-    hardware_time = normalize(np.array(hardware_time))
-    tlp_v2_median_69_time = normalize(np.array(tlp_v2_median_69_time))
-    diff_tlp_v2_median_69_time = hardware_time - tlp_v2_median_69_time
+    loss_tlp_old_14 = loss_func(tlp_old_14_time, hardware)
 
-    hardware_time = normalize(np.array(hardware_time))
-    tlp_v2_min_44_time = normalize(np.array(tlp_v2_min_44_time))
-    diff_tlp_v2_min_44_time = hardware_time - tlp_v2_min_44_time
+    loss_tlp_median_home0_13 = loss_func(tlp_median_home0_13_time, hardware)
 
-    hardware_time = normalize(np.array(hardware_time))
-    tlp_median_home_14_time = normalize(np.array(tlp_median_home_14_time))
-    diff_home_14 = hardware_time - tlp_median_home_14_time
+    loss_tlp_median_14 = loss_func(tlp_median_14_time, hardware)
 
-    tlp_median_14_time = normalize(np.array(tlp_median_14_time))
-    diff_median_14 = hardware_time - tlp_median_14_time
-    tlp_median_home0_13_time = normalize(np.array(tlp_median_home0_13_time))
-    diff_home0_13 = hardware_time - tlp_median_home0_13_time
-    tlp_old_14_time = normalize(np.array(tlp_old_14_time))
-    diff_old_14 = hardware_time - tlp_old_14_time
+    loss_tlp_median_home_14 = loss_func(tlp_median_home_14_time, hardware)
 
-    with open(os.path.join(save_path, f'0records_median_run_8.txt'), 'w') as file:
-        file.write("diff hardware from diff_tlp_median_57_time mean = " +
-                   str(np.mean(diff_tlp_median_57_time)) + "  var = " + str(np.var(diff_tlp_median_57_time)) + '\n')
-        file.write("diff hardware from diff_tlp_min_77_time mean = " +
-                   str(np.mean(diff_tlp_min_77_time)) + "  var = " + str(np.var(diff_tlp_min_77_time)) + '\n')
-        file.write("diff hardware from diff_tlp_v2_median_69_time mean = " +
-                   str(np.mean(diff_tlp_v2_median_69_time)) + "  var = " + str(np.var(diff_tlp_v2_median_69_time)) + '\n')
-        file.write("diff hardware from diff_tlp_v2_min_44_time mean = " +
-                   str(np.mean(diff_tlp_v2_min_44_time)) + "  var = " + str(np.var(diff_tlp_v2_min_44_time)) + '\n')
+    wandb.log({"loss_median_57": loss_median_57, "loss_min_77": loss_min_77,
+               "loss_v2_median_69":loss_v2_median_69, "loss__v2_min_44":loss__v2_min_44,
+               "loss_tlp_old_14":loss_tlp_old_14, "loss_tlp_median_home0_13": loss_tlp_median_home0_13,
+               "loss_tlp_median_14":loss_tlp_median_14, "loss_tlp_median_home_14":loss_tlp_median_home_14})
+    
+    save_path = "/root/kongdehao/model/0test_tlp"
+    with open(os.path.join(save_path, f'0records_rank_loss_8.txt'), 'w') as file:
+        file.write("Rank Loss  hardware from diff_tlp_median_57_time = " +
+                   str(loss_median_57) + '\n')
+        file.write("Rank Loss hardware from diff_tlp_min_77_time = " +
+                   str(loss_min_77) + '\n')
+        file.write("Rank Loss hardware from diff_tlp_v2_median_69_time = " +
+                   str(loss_v2_median_69) + '\n')
+        file.write("Rank Loss hardware from diff_tlp_v2_min_44_time = " +
+                   str(loss__v2_min_44) + '\n')
 
-        file.write("diff hardware from tlp_median_home_14_time mean = " +
-                   str(np.mean(diff_home_14)) + "  var = " + str(np.var(diff_home_14)) + '\n')
-        file.write("diff hardware from tlp_median_14_time mean = " +
-                   str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
-        file.write("diff hardware from tlp_median_home0_13_time mean = " +
-                   str(np.mean(diff_home0_13)) + "  var = " + str(np.var(diff_home0_13)) + '\n')
-        file.write("diff hardware from tlp_old_14_time mean = " +
-                   str(np.mean(diff_old_14)) + "  var = " + str(np.var(diff_old_14)) + '\n')
-        # file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
-        # Write each item in the list to a new line in the file
-        file.write("diff_home_14: ")
-        for item in diff_home_14:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("diff_median_14: ")
-        for item in diff_median_14:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("diff_home0_13: ")
-        for item in diff_home0_13:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("diff_old_14: ")
+        file.write("Rank Loss hardware from tlp_median_home_14_time = " +
+                   str(loss_tlp_median_home_14) + '\n')
+        file.write("Rank Loss hardware from tlp_median_14_time = " +
+                   str(loss_tlp_median_14) + '\n')
+        file.write("Rank Loss hardware from tlp_median_home0_13_time = " +
+                   str(loss_tlp_median_home0_13) + '\n')
+        file.write("Rank Loss hardware from tlp_old_14_time = " +
+                   str(loss_tlp_old_14) + '\n')
+    print(f"Finish!!!")
+    # hardware_time = normalize(np.array(hardware_time))
+    # tlp_median_57_time = normalize(np.array(tlp_median_57_time))
+    # diff_tlp_median_57_time = hardware_time - tlp_median_57_time
 
-        for item in diff_old_14:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("hardware_time: ")
-        for item in hardware_time:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("tlp_median_home_14_time: ")
-        for item in tlp_median_home_14_time:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("tlp_median_14_time: ")
-        for item in tlp_median_14_time:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("tlp_median_home0_13_time: ")
-        for item in tlp_median_home0_13_time:
-            file.write(str(item) + '  ')
-        file.write('\n')
-        file.write("tlp_old_14_time: ")
-        for item in tlp_old_14_time:
-            file.write(str(item) + '  ')
+    # hardware_time = normalize(np.array(hardware_time))
+    # tlp_min_77_time = normalize(np.array(tlp_min_77_time))
+    # diff_tlp_min_77_time = hardware_time - tlp_min_77_time
+
+    # hardware_time = normalize(np.array(hardware_time))
+    # tlp_v2_median_69_time = normalize(np.array(tlp_v2_median_69_time))
+    # diff_tlp_v2_median_69_time = hardware_time - tlp_v2_median_69_time
+
+    # hardware_time = normalize(np.array(hardware_time))
+    # tlp_v2_min_44_time = normalize(np.array(tlp_v2_min_44_time))
+    # diff_tlp_v2_min_44_time = hardware_time - tlp_v2_min_44_time
+
+    # hardware_time = normalize(np.array(hardware_time))
+    # tlp_median_home_14_time = normalize(np.array(tlp_median_home_14_time))
+    # diff_home_14 = hardware_time - tlp_median_home_14_time
+
+    # tlp_median_14_time = normalize(np.array(tlp_median_14_time))
+    # diff_median_14 = hardware_time - tlp_median_14_time
+    # tlp_median_home0_13_time = normalize(np.array(tlp_median_home0_13_time))
+    # diff_home0_13 = hardware_time - tlp_median_home0_13_time
+    # tlp_old_14_time = normalize(np.array(tlp_old_14_time))
+    # diff_old_14 = hardware_time - tlp_old_14_time
+
+    # with open(os.path.join(save_path, f'0records_median_run_8.txt'), 'w') as file:
+    #     file.write("diff hardware from diff_tlp_median_57_time mean = " +
+    #                str(np.mean(diff_tlp_median_57_time)) + "  var = " + str(np.var(diff_tlp_median_57_time)) + '\n')
+    #     file.write("diff hardware from diff_tlp_min_77_time mean = " +
+    #                str(np.mean(diff_tlp_min_77_time)) + "  var = " + str(np.var(diff_tlp_min_77_time)) + '\n')
+    #     file.write("diff hardware from diff_tlp_v2_median_69_time mean = " +
+    #                str(np.mean(diff_tlp_v2_median_69_time)) + "  var = " + str(np.var(diff_tlp_v2_median_69_time)) + '\n')
+    #     file.write("diff hardware from diff_tlp_v2_min_44_time mean = " +
+    #                str(np.mean(diff_tlp_v2_min_44_time)) + "  var = " + str(np.var(diff_tlp_v2_min_44_time)) + '\n')
+
+    #     file.write("diff hardware from tlp_median_home_14_time mean = " +
+    #                str(np.mean(diff_home_14)) + "  var = " + str(np.var(diff_home_14)) + '\n')
+    #     file.write("diff hardware from tlp_median_14_time mean = " +
+    #                str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
+    #     file.write("diff hardware from tlp_median_home0_13_time mean = " +
+    #                str(np.mean(diff_home0_13)) + "  var = " + str(np.var(diff_home0_13)) + '\n')
+    #     file.write("diff hardware from tlp_old_14_time mean = " +
+    #                str(np.mean(diff_old_14)) + "  var = " + str(np.var(diff_old_14)) + '\n')
+    #     # file.write("diff hardware from tlp_median_14_time mean = " + str(np.mean(diff_median_14)) + "  var = " + str(np.var(diff_median_14)) + '\n')
+    #     # Write each item in the list to a new line in the file
+    #     file.write("diff_home_14: ")
+    #     for item in diff_home_14:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("diff_median_14: ")
+    #     for item in diff_median_14:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("diff_home0_13: ")
+    #     for item in diff_home0_13:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("diff_old_14: ")
+
+    #     for item in diff_old_14:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("hardware_time: ")
+    #     for item in hardware_time:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("tlp_median_home_14_time: ")
+    #     for item in tlp_median_home_14_time:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("tlp_median_14_time: ")
+    #     for item in tlp_median_14_time:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("tlp_median_home0_13_time: ")
+    #     for item in tlp_median_home0_13_time:
+    #         file.write(str(item) + '  ')
+    #     file.write('\n')
+    #     file.write("tlp_old_14_time: ")
+    #     for item in tlp_old_14_time:
+    #         file.write(str(item) + '  ')
 
 
 # To make a GFlowNet dataset
