@@ -101,18 +101,22 @@ class GflowNetEmbedding:
         previous_count_ptr = 0
         type_list = [GflowNetEmbedding.e_annotation.unembedding_annotation, GflowNetEmbedding.e_cuda_bind.unembedding_cudabind,
                      GflowNetEmbedding.e_sample_perfectile.unembedding_sample_perfectile]
-        new_insts = []
-        new_decisions = []
+        # new_insts = []
+        # new_decisions = []
+        # NOTE: modify original decision!!! 
+        if isinstance(decisions, map):
+            decisions = dict(decisions)
+            
         for v, i in enumerate(count_Ptr_results):
             _embedding_results = embedding_results[previous_count_ptr:i]
             _embedding_conditions = embedding_conditions[previous_count_ptr:i]
             previous_count_ptr = i
-            _new_insts, _new_decisions = type_list[v](
+            decisions = type_list[v](
                 insts, decisions, _embedding_results, _embedding_conditions)
-            new_insts += _new_insts
-            new_decisions += _new_decisions
+            # new_insts += _new_insts
+            # new_decisions += _new_decisions
 
-        return new_insts, new_decisions
+        return list(decisions.keys()), list(decisions.values())
 
     def __call__(self, insts, decisions, if_embedding, **kwargs):
         """

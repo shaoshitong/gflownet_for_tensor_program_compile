@@ -158,7 +158,7 @@ class EmbeddingSamplePerfectTile:
                 #     np.array(embedding_result))
                 # NOTE: convert 32 value into one-hot len=10
                 # max_len = EmbeddingSamplePerfectTile.embedding_total+1
-                
+
                 max_len = 10
                 one_hot = np.eye(max_len)[embedding_result]
                 embedding_results.append(one_hot)
@@ -176,11 +176,12 @@ class EmbeddingSamplePerfectTile:
 
     @staticmethod
     def unembedding_sample_perfectile(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
-
-        new_insts = []
-        new_decisions = []
+        import copy
+        # new_insts = []
+        decisions = dict(decisions)
+        new_decisions = decisions
         if len(embedding_results) == 0:
-            return new_insts, new_decisions
+            return new_decisions
 
         count_ptr = 0
         for sub_inst, sub_value in decisions.items():
@@ -195,8 +196,9 @@ class EmbeddingSamplePerfectTile:
                 # if len(embedding_result.shape) == 1:
                 #     embedding_result = embedding_result.reshape(-1, max_len)
 
-                # embedding_result = np.argmax(embedding_result, axis=1)
-                
+                if len(embedding_result.shape) > 1:
+                    embedding_result = np.argmax(embedding_result, axis=-1)
+
                 embedding_condition = embedding_conditions[count_ptr]
                 # first 2 is num & max_factor, last is padding zeros
                 factors = embedding_condition[2:]
@@ -207,13 +209,13 @@ class EmbeddingSamplePerfectTile:
                 for i in range(len(embedding_result)):
                     if embedding_result[i] == 0:
                         break
-                    
+
                     new_np_sub_value[embedding_result[i]-1] *= factors[i]
-                new_insts.append(sub_inst)
-                new_decisions.append([tvm.tir.const(i, dtype='int32')
-                                     for i in new_np_sub_value.tolist()])
+                # new_insts.append(sub_inst)
+                new_decisions[sub_inst] = [tvm.tir.const(i, dtype='int32')
+                                           for i in new_np_sub_value.tolist()]
                 count_ptr += 1
-        
-        if len(new_insts) == len(list(decisions.values())):
-            print(f"Same len for old decision & new decision in Sample Perfect Tile")
-        return new_insts, new_decisions
+
+        # if len(new_insts) == len(list(decisions.values())):
+        #     print(f"Same len for old decision & new decision in Sample Perfect Tile")
+        return new_decisions

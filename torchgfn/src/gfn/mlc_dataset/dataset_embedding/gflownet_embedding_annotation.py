@@ -130,11 +130,14 @@ class EmbeddingAnnotation:
 
     @staticmethod
     def unembedding_annotation(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
-        new_insts = []
-        new_decisions = []
+
+        # new_insts = []
+        # Same order for insts and decisions
+        decisions = dict(decisions)
+        new_decisions = decisions
         count_ptr = 0
         if len(embedding_results) == 0:
-            return new_insts, new_decisions
+            return new_decisions
 
         annotations = set()
         sample_insts = {}
@@ -156,11 +159,14 @@ class EmbeddingAnnotation:
             if sub_inst.kind == InstructionKind.get("SampleCategorical"):
                 if sub_inst.outputs[0] in annotations:
                     embedding_result = embedding_results[count_ptr]
-                    # new_value = np.argmax(embedding_result)
-                    new_value = embedding_result
+                    # 判断变量是否为ndarray
+                    if isinstance(embedding_result, np.ndarray):
+                        new_value = np.argmax(embedding_result)
+                    else:
+                        new_value = embedding_result
                     new_value = tvm.tir.const(new_value, dtype='int32')
-                    new_insts.append(sub_inst)
-                    new_decisions.append(new_value)
+                    # new_insts.append(sub_inst)
+                    new_decisions[sub_inst] = new_value
                     count_ptr += 1
 
         for ann_inst in ann_insts:
@@ -168,13 +174,16 @@ class EmbeddingAnnotation:
             var_rv = ann_inst.inputs[1]
             sample_categorical = sample_insts[var_rv]
             embedding_result = embedding_results[count_ptr]
-            # new_value = np.argmax(embedding_result)
-            new_value = embedding_result
+            if isinstance(embedding_result, np.ndarray):
+                new_value = np.argmax(embedding_result)
+            else:
+                new_value = embedding_result
+
             new_value = tvm.tir.const(new_value, dtype='int32')
-            new_insts.append(sample_categorical)
-            new_decisions.append(new_value)
+            # new_insts.append(sample_categorical)
+            new_decisions[sample_categorical] = new_value
             count_ptr += 1
 
-        if len(new_insts) == len(list(decisions.values())):
-            print(f"Same len for old decision & new decision in annotation")
-        return new_insts, new_decisions
+        # if len(new_insts) == len(list(decisions.values())):
+        #     print(f"Same len for old decision & new decision in annotation")
+        return new_decisions

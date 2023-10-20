@@ -131,10 +131,12 @@ class EmbeddingCUDABind:
     @staticmethod
     def unembedding_cudabind(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
         count_ptr = 0
-        new_insts = []
-        new_decisions = []
+        # new_insts = []
+        decisions = dict(decisions)
+        import copy
+        new_decisions = decisions
         if len(embedding_results) == 0:
-            return new_insts, new_decisions
+            return new_decisions
 
         sample_insts = {}
         sampled_split_insts = {}
@@ -150,27 +152,29 @@ class EmbeddingCUDABind:
                 sampled_split_insts[var_rv] = sub_inst
             elif EmbeddingCUDABind.is_thread_binding_by_sample(sub_inst, sampled_split_insts):
                 bind_insts.append(sub_inst)
-                
+
         insts = []
         for bind_inst in bind_insts:
             loop_rv = bind_inst.inputs[0]
             split_inst = sampled_split_insts[loop_rv]
             expr_rv = split_inst.inputs[2]
             sample_inst = sample_insts[expr_rv]
-            
+
             if len(insts) > 0 and sample_inst in insts:
                 # print(f"repeat inst for {sample_inst}")
                 continue
             insts.append(sample_inst)
 
-            # one_hot = embedding_results[count_ptr]
+            one_hot = embedding_results[count_ptr]
             count_ptr += 1
-            # new_value = np.argmax(one_hot)
-            new_value = embedding_results[count_ptr]
+            if isinstance(one_hot, np.ndarray):
+                new_value = np.argmax(one_hot)
+            else:
+                new_value = one_hot
             new_value = tvm.tir.const(new_value, dtype='int32')
-            new_insts.append(sample_inst)
-            new_decisions.append(new_value)
+            # new_insts.append(sample_inst)
+            new_decisions[sample_inst] = new_value
 
-        if len(new_insts) == len(list(decisions.values())):
-            print(f"Same len for old decision & new decision in CUDA Bind")
-        return new_insts, new_decisions
+        # if len(new_insts) == len(list(decisions.values())):
+        #     print(f"Same len for old decision & new decision in CUDA Bind")
+        return new_decisions

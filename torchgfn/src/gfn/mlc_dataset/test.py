@@ -54,7 +54,8 @@ if __name__ == "__main__":
                 #     print(er.shape, end=" ")
                 # print("")
                 if len(embedding_results) != len(AA):
-                    print(f"Wrong len of res = {len(embedding_results)}, len of decision = {len(AA)}")
+                    print(
+                        f"Wrong len of res = {len(embedding_results)}, len of decision = {len(AA)}")
                     print(embedding_results)
                     print(AA)
                     flag = False
@@ -62,7 +63,8 @@ if __name__ == "__main__":
                 new_sub_decisions = deep_copy_map(sub_decisions)
                 for key, value in new_sub_decisions.items():
                     if key.kind == InstructionKind.get("SampleCategorical"):
-                        new_sub_decisions[key] = tvm.tir.const(0, dtype='int32')
+                        new_sub_decisions[key] = tvm.tir.const(
+                            -1, dtype='int32')
 
                 # NOTE: following is training & model
                 max_value = max(max_value, len(embedding_results))
@@ -70,17 +72,16 @@ if __name__ == "__main__":
                 # new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
                 #                                       embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
                 new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=embedding_results,
-                                                    embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
+                                                      embedding_conditions=embedding_conditions, count_Ptr_results=count_ptr_list)
 
                 # Must use with_decision() to set sub_trace
                 for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
                     sub_trace = sub_trace.with_decision(
                         new_sub_inst, new_sub_decision, True)
-                    
+
                 # print(f"len of old decision = {len(AA)}")
                 BB = list(sub_trace.decisions.values())
                 # print(f"len of new decision = {len(BB)}")
-                print(check_decision_same(AA, BB), max_value)
-                if not check_decision_same(AA, BB):
+                print(check_decision_same(AA, new_sub_decisions), max_value)
+                if not check_decision_same(AA, new_sub_decisions):
                     print(f"new insts & decision = {sub_trace.decisions}")
-
