@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     from src.gfn.utils.edm_model import mlp_ebm
     # define states len & action len
-    state_len = 15 * 1 + 15 * 96
-    action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
+    state_len = 15 * 1 + 15 * 32
+    action_len = 15 * 10 + 15 * 32 * 10 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
     tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
 

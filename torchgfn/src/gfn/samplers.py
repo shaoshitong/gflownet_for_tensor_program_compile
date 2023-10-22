@@ -207,7 +207,7 @@ class Sampler:
             # (3) (24) (0) (0)
             cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
             len0 = 15
-            fac = 96
+            fac = 32
             len1 = 1455
 
             # TODO: set invalid part(cond0 padding into 15) into zero
@@ -244,9 +244,9 @@ class Sampler:
                     factors = factors[:ed]
                     lenf = len(factors)
                     len0 = 15
-                    delta = 96
+                    delta = 32
                     state = states.tensor[i]
-                    st = len0 + j*delta + 3*lenf
+                    st = len0 + j*delta + lenf
                     ed = len0 + (j+1)*delta
                     # print(f"tile len cond1 init {state[st]} in {st}:{ed} into {val}")
                     state[st:ed] = val

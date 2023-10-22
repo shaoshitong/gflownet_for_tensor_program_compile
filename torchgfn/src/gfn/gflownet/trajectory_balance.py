@@ -55,12 +55,12 @@ class TBGFlowNet(TrajectoryBasedGFlowNet):
         log_reward = (- scores + pf - pb).mean()
         pf = pf.mean()
         pb = pb.mean()
-        print("pf:",pf.item(),"pb:",pb.item(),"log_reward:",log_reward.item(),"logZ:",self.logZ.item())
+        # print("pf:",pf.item(),"pb:",pb.item(),"log_reward:",log_reward.item(),"logZ:",self.logZ.item())
         loss = (scores + self.logZ).pow(2).mean()
         if torch.isnan(loss):
             raise ValueError("loss is nan")
 
-        return loss
+        return loss, pf, pb, log_reward, self.logZ
 
 
 class LogPartitionVarianceGFlowNet(TrajectoryBasedGFlowNet):
@@ -82,7 +82,8 @@ class LogPartitionVarianceGFlowNet(TrajectoryBasedGFlowNet):
     ):
         super().__init__(pf, pb, on_policy=on_policy)
 
-        self.log_reward_clip_min = log_reward_clip_min  # -12 is roughly log(1e-5)
+        # -12 is roughly log(1e-5)
+        self.log_reward_clip_min = log_reward_clip_min
 
     def loss(self, env: Env, trajectories: Trajectories) -> TT[0, float]:
         """Log Partition Variance loss.

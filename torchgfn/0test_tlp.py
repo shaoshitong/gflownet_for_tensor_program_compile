@@ -3,7 +3,7 @@ from src.gfn.mlc_dataset.dataset_embedding.load_dataset_meta_schedule import *
 
 if __name__ == "__main__":
     # compute_rankloss()
-    measure_tlp("/root/share/dataset/debug_measure_candidate/",
+    measure_tlp("/root/share/dataset/decode_info",
                 "/root/kongdehao/model/0test_tlp")
     # measure_tlp("/root/share/dataset/measure_candidate_v2/", "/root/kongdehao/model/0test_tlp")
 

@@ -121,11 +121,16 @@ class EmbeddingSamplePerfectTile:
         Returns:
             tuple[list[np.ndarray],list[np.ndarray]]: An Embedding only with 0/1
         """
-
+        new_insts = []
+        new_decis = []
+        # NOTE: must match order with decision & embedding condition
         embedding_results = []
         embedding_conditions = []
         for sub_inst, sub_value in decisions.items():
             if sub_inst.kind == InstructionKind.get("SamplePerfectTile"):
+                new_insts.append(str(sub_inst))
+                new_decis.append([int(v.value) for v in sub_value])
+
                 np_sub_value = np.array([v.value for v in sub_value])
                 # origin num of tile 7: (4, 1, 32, 1, 1, 1, 1)
                 nums = sub_inst.attrs[0]
@@ -172,7 +177,7 @@ class EmbeddingSamplePerfectTile:
                     embedding_condition += [0]  # padding to 34
                 embedding_condition = np.array(embedding_condition).astype(int)
                 embedding_conditions.append(embedding_condition)
-        return embedding_results, embedding_conditions
+        return embedding_results, embedding_conditions, new_insts, new_decis
 
     @staticmethod
     def unembedding_sample_perfectile(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
@@ -212,7 +217,7 @@ class EmbeddingSamplePerfectTile:
 
                     new_np_sub_value[embedding_result[i]-1] *= factors[i]
                 # new_insts.append(sub_inst)
-                new_decisions[sub_inst] = [tvm.tir.const(i, dtype='int32')
+                new_decisions[sub_inst] = [tvm.tir.const(int(i), dtype='int32')
                                            for i in new_np_sub_value.tolist()]
                 count_ptr += 1
 

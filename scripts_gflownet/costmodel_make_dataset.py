@@ -117,8 +117,8 @@ def extract_features(
         if not res.run_secs:
             return 1e10
         # NOTE: convert into min()
-        # return float(np.median([float(s) for s in res.run_secs]))
-        return float(np.min([float(s) for s in res.run_secs]))
+        return float(np.median([float(s) for s in res.run_secs]))
+        # return float(np.min([float(s) for s in res.run_secs]))
 
     # def _mean_cost(res: RunnerResult) -> float:
     #     if not res.run_secs:
@@ -146,7 +146,7 @@ def handle_json(model_dir: str):
         elif json_file.endswith("_candidates.json"):
             candidate_path.append(json_file)
 
-    # handhle json file
+    # handle json file
     extractor_feature = PerStoreFeature(extract_workload=True)
     for workload_path in tqdm(workload_paths):
         try:

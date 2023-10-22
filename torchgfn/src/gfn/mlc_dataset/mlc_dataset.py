@@ -250,8 +250,8 @@ def measure_tlp(data_path, save_path):
             # measure_candidate for
             sub_sch = record.as_measure_candidate().sch
             # record.workload is workload info
-            # min_cost = _min_cost(record)
-            min_cost = _median_cost(record)
+            min_cost = _min_cost(record)
+            # min_cost = _median_cost(record)
 
             # NOTE: pass invalid run_sec
             if min_cost == 1e10:
@@ -259,6 +259,7 @@ def measure_tlp(data_path, save_path):
                 continue
 
             hardware_time.append(min_cost)
+            wandb.log({"hardware_time": min_cost})
             sub_trace = sub_sch.trace
             sub_insts = sub_trace.insts
             sub_decisions = sub_trace.decisions
@@ -290,12 +291,12 @@ def measure_tlp(data_path, save_path):
                 tlp_v2_min_44_time.append(tlp_v2_min_44(batch_data).item())
                 # log metrics to wandb
                 wandb.log({"tlp_median_home_14_time": tlp_median_home_14_time[-1],
-                            "tlp_median_14_time": tlp_median_14_time[-1],
+                           "tlp_median_14_time": tlp_median_14_time[-1],
                            "tlp_median_home0_13_time": tlp_median_home0_13_time[-1],
-                            "tlp_old_14_time": tlp_old_14_time[-1],
-                           "tlp_median_57_time": tlp_median_57_time[-1], 
+                           "tlp_old_14_time": tlp_old_14_time[-1],
+                           "tlp_median_57_time": tlp_median_57_time[-1],
                            "tlp_min_77_time": tlp_min_77_time[-1],
-                           "tlp_v2_median_69_time": tlp_v2_median_69_time[-1], 
+                           "tlp_v2_median_69_time": tlp_v2_median_69_time[-1],
                            "tlp_v2_min_44_time": tlp_v2_min_44_time[-1]})
 
             print(f"Finish counter = {counter}")
@@ -333,12 +334,12 @@ def measure_tlp(data_path, save_path):
     loss_tlp_median_home_14 = loss_func(tlp_median_home_14_time, hardware)
 
     wandb.log({"loss_median_57": loss_median_57, "loss_min_77": loss_min_77,
-               "loss_v2_median_69":loss_v2_median_69, "loss__v2_min_44":loss__v2_min_44,
-               "loss_tlp_old_14":loss_tlp_old_14, "loss_tlp_median_home0_13": loss_tlp_median_home0_13,
-               "loss_tlp_median_14":loss_tlp_median_14, "loss_tlp_median_home_14":loss_tlp_median_home_14})
-    
+               "loss_v2_median_69": loss_v2_median_69, "loss__v2_min_44": loss__v2_min_44,
+               "loss_tlp_old_14": loss_tlp_old_14, "loss_tlp_median_home0_13": loss_tlp_median_home0_13,
+               "loss_tlp_median_14": loss_tlp_median_14, "loss_tlp_median_home_14": loss_tlp_median_home_14})
+
     save_path = "/root/kongdehao/model/0test_tlp"
-    with open(os.path.join(save_path, f'0records_rank_loss_8.txt'), 'w') as file:
+    with open(os.path.join(save_path, f'0records_part_rank_loss_8.txt'), 'w') as file:
         file.write("Rank Loss  hardware from diff_tlp_median_57_time = " +
                    str(loss_median_57) + '\n')
         file.write("Rank Loss hardware from diff_tlp_min_77_time = " +
@@ -444,7 +445,7 @@ def measure_tlp(data_path, save_path):
 
 # To make a GFlowNet dataset
 # TODO: need for add workload(in context) info as condition
-def gflownet_data_save(data_path, save_path):
+def gflownet_data_save(data_path, save_path, database_path, decision_path):
     assert os.path.exists(data_path), f"{data_path} not exists!"
     # database include candidates(trace, instructions&decision) & workload(subgraph)
     databases = load_all_files(data_path)
@@ -456,7 +457,13 @@ def gflownet_data_save(data_path, save_path):
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
+    if not os.path.exists(database_path):
+        os.makedirs(database_path)
+
+    if not os.path.exists(decision_path):
+        os.makedirs(decision_path)
     # get min cost time from multiple measure runtime
+
     def _min_cost(res) -> float:
         if not res.run_secs:
             return 1e10
@@ -470,10 +477,7 @@ def gflownet_data_save(data_path, save_path):
         records = database.get_all_tuning_records()
         cc = 0
         for record in records:
-            if os.path.exists(f"mlc_{count_ptr}.npz"):
-                count_ptr += 1
-                print(f"Passing mlc_{count_ptr}.npz")
-                continue
+
             # convert record into measured candidates
             # measure_candidate for
             sub_sch = record.as_measure_candidate().sch
@@ -483,19 +487,90 @@ def gflownet_data_save(data_path, save_path):
             sub_insts = sub_trace.insts
             sub_decisions = sub_trace.decisions
 
-            print(f"old insts & decision = {sub_decisions}")
+            from tvm.ir.container import Array
+            from tvm.tir.expr import IntImm
+
+            def custom_sort(item):
+                value = item[1]
+                if isinstance(value, Array):
+                    val = [int(v.value) for v in value]
+                    return sum(val)  # 对列表值求和作为排序关键字
+                else:
+                    return int(value)
+            sub_decisions = sorted(
+                dict(sub_decisions).items(), key=custom_sort)
+            sub_decisions = {k: v for k, v in sub_decisions}
+
+            candidate = record.as_measure_candidate()
+            # print(f"old insts & decision = {sub_decisions}")
+            # print(f"old insts = {list(sub_decisions.keys())}")
+            print(f"old decision = {list(sub_decisions.values())}")
+
             extend_embedding_0 = []
             extend_embedding_1 = []
             ex_cond0 = []
             ex_cond1 = []
             # list(3, 10) (3, 24) (3, 1) -- anno/cuda
             # (4, 32, 10) (4, 34) (3, 3, 7) -- sample tile
-            embedding_results, embedding_conditions, count_ptr_list = gm(
+            # NOTE: save new order decision and insts!!!
+            embedding_results, embedding_conditions, count_ptr_list, new_decisions = gm(
                 sub_insts, sub_decisions, True)
 
-            print(f"embedding res = {embedding_results}")
-            print(f"embedding cond = {embedding_conditions}")
-            print(f"counter ptr = {count_ptr_list}")
+            # print(f"new insts = {list(new_decisions.keys())}")
+            print(f"new decision = {list(new_decisions.values())}")
+            import json
+
+            # 保存字典到文件
+            def save_dict_to_file(dictionary, filename):
+                with open(filename, 'w') as file:
+                    json.dump(dictionary, file)
+
+            # 从文件中读取字典
+            def load_dict_from_file(filename):
+                with open(filename, 'r') as file:
+                    dictionary = json.load(file)
+                return dictionary
+
+            # # 保存new order decision到文件
+            # save_dict_to_file(new_decisions, os.path.join(
+            #         decision_path, f"decisions_{count_ptr}.json", ),)
+
+            # # 从文件中读取字典
+            # loaded_dict = load_dict_from_file('data.json')
+
+            # NOTE: new decision is null list -- gm must pass valid insts & decisions
+            # print(f"new decision = {new_sub_decisions}")
+
+            # # Must use with_decision() to set sub_trace
+            # for new_sub_inst, new_sub_decision in new_decisions.items():
+            #     # new_sub_decision = tvm.tir.const(1, dtype='int32')
+            #     # NOTE: bug1 must assign to sub_trace
+            #     sub_trace = sub_trace.with_decision(
+            #         new_sub_inst, new_sub_decision, True)
+
+            # print(f"trace insts = {list(sub_trace.decisions.keys())}")
+            print(f"trace decision = {list(sub_trace.decisions.values())}")
+            from tvm.meta_schedule.database.database import TuningRecord
+            target = "cuda"
+
+            new_database = ms.database.JSONDatabase(
+                path_workload=os.path.join(
+                    database_path, f"workloads_{count_ptr}.json", ),
+                path_tuning_record=os.path.join(
+                    database_path, f"candidates_{count_ptr}.json"),
+            )
+            workload = record.workload
+            new_database.commit_workload(workload.mod)
+            new_database.commit_tuning_record(
+                ms.database.TuningRecord(
+                    trace=sub_trace,
+                    workload=workload,
+                    run_secs=record.run_secs,
+                    target=Target(target),
+                    args_info=candidate.args_info
+                )
+            )
+            print(f"Successfully Save File database_{count_ptr}")
 
             decode = []
             # NOTE: (cond_x1, cond_y1) is anno&cuda shape (cond_x2, cond_y2) is tile shape
@@ -601,11 +676,15 @@ def gflownet_data_save(data_path, save_path):
                      last_ptr_list=last_ptr_list, run_secs=min_cost)
             print(f"Successfully Save File mlc_{count_ptr}.npz")
             count_ptr += 1
-            file_name.append(database.path_workload+f"{cc}")
+            file_name.append(str(count_ptr)+"  " +
+                             database.path_workload+f"  {cc}")
             cc += 1
 
-    # print("Max order len = ", max_order_len)
-    # Open file in write mode
+    with open(os.path.join(database_path, f'0records.txt'), 'w') as file:
+        # Write each item in the list to a new line in the file
+        for item in file_name:
+            file.write(str(item) + '\n')
+
     with open(os.path.join(save_path, f'0records.txt'), 'w') as file:
         # Write each item in the list to a new line in the file
         for item in file_name:
@@ -794,8 +873,8 @@ def restore_embedding(decode_info):
         emb1 = emb1.cpu()
         cond0 = cond0.cpu()
         cond1 = cond1.cpu()
-        print(f"emb0 = {emb0}")
-        print(f"emb1 = {emb1}")
+        # print(f"emb0 = {emb0}")
+        # print(f"emb1 = {emb1}")
         res = []
         emb_conds = []
         p0 = 0  # emb0 position
@@ -840,18 +919,34 @@ def restore_embedding(decode_info):
         sub_insts = sub_trace.insts
         # decision only include stochastic instructions
         sub_decisions = sub_trace.decisions
-        print(f"old decision = {list(sub_decisions)}")
+
+        from tvm.ir.container import Array
+        from tvm.tir.expr import IntImm
+
+        def custom_sort(item):
+            value = item[1]
+            if isinstance(value, Array):
+                val = [int(v.value) for v in value]
+                return sum(val)  # 对列表值求和作为排序关键字
+            else:
+                return int(value)
+        # NOTE: MUST sorted for fixed position!!!
+        sub_decisions = sorted(
+            dict(sub_decisions).items(), key=custom_sort)
+        sub_decisions = {k: v for k, v in sub_decisions}
+
+        # print(f"old decision = {list(sub_decisions.values())}")
         # print(f"res = {res}")
 
         gm = GflowNetEmbedding()
-        new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
-                                              embedding_conditions=emb_conds, count_Ptr_results=ptr)
+        new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
+                               embedding_conditions=emb_conds, count_Ptr_results=ptr)
 
         # NOTE: new decision is null list -- gm must pass valid insts & decisions
         # print(f"new decision = {new_sub_decisions}")
 
         # Must use with_decision() to set sub_trace
-        for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
+        for new_sub_inst, new_sub_decision in new_sub_decisions.items():
             # new_sub_decision = tvm.tir.const(1, dtype='int32')
             # NOTE: bug1 must assign to sub_trace
             sub_trace = sub_trace.with_decision(
@@ -865,10 +960,9 @@ def restore_embedding(decode_info):
         old_decision.append(list(sub_decisions.values()))
         new_decision.append(new_sub_decisions)
 
-        if candidate_path == "/root/share/dataset/tlp_dataset0/candidates_64.json":
-            print(f"Wrong decision, json = {candidate_path}")
-            print(f"Wrong decision, instruct = {new_sub_insts}")
-            print(f"Wrong decision, decision = {new_sub_decisions}")
+        # if candidate_path == "/root/share/dataset/tlp_dataset0/candidates_64.json":
+        #     print(f"Wrong decision, json = {candidate_path}")
+        #     print(f"Wrong decision, ints * decision = {new_sub_decisions}")
 
         from tvm.meta_schedule.database.database import TuningRecord
 
@@ -965,7 +1059,7 @@ class MLCGflowNetDataset(Dataset):
 
 def gflownet_data_load(save_path,
                        database_path=None,
-                       num_workers=4,
+                       num_workers=112,
                        batch_size=16,
                        shuffle=False,
                        pin_memory=False,

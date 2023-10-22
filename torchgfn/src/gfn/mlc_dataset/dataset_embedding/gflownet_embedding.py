@@ -19,6 +19,7 @@ from tvm.tir.schedule import Trace
 from tvm.tir.schedule import InstructionKind, Instruction
 import numpy as np
 from tvm.tir.schedule import InstructionKind
+from collections import Counter
 
 
 def deep_copy_map(old_map):
@@ -33,21 +34,24 @@ def deep_copy_array(old_array):
 
 
 def check_decision_same(decisions1, decisions2):
-    for decision1, decision2 in zip(decisions1, decisions2):
-        if type(decision1) != type(decision2):
-            print("types are not same", type(decision1), type(decision2))
+    decisions1 = dict(decisions1)
+    decisions2 = dict(decisions2)
+    for key, v1 in decisions1.items():
+        v2 = decisions2[key]
+        if type(v1) != type(v2):
+            print("types are not same", type(v1), type(v2))
             return False
-        if isinstance(decision1, (int, tvm.tir.expr.IntImm)):
-            if decision1 != decision2:
-                print("ints are not same", decision1, decision2)
+        if isinstance(v1, (int, tvm.tir.expr.IntImm)):
+            if v1 != v2:
+                print("ints are not same", v1, v2)
                 return False
-        elif isinstance(decision1, (list, tvm.ir.container.Array)):
-            check = check_decision_same(decision1, decision2)
+        elif isinstance(v1, (list, tvm.ir.container.Array)):
+            check = v1 == v2
             if check == False:
-                print("lists are not same", decision1, decision2)
+                print("lists are not same", v1, v2)
                 return False
         else:
-            print("unknown type", type(decision1), type(decision2))
+            print("unknown type", type(v1), type(v2))
             return False
     return True
 
@@ -69,54 +73,66 @@ class GflowNetEmbedding:
         count_ptr = 0
         count_Ptr_results = []
         embedding_results, embedding_conditions = [], []
-        _embedding_results, _embedding_conditions = GflowNetEmbedding.e_annotation.embedding_annotation(
-            insts, decisions)
+        new_insts, new_decis = [], []
+        _embedding_results, _embedding_conditions, _new_insts, _new_decis = \
+            GflowNetEmbedding.e_annotation.embedding_annotation(
+                insts, decisions)
+        new_insts += _new_insts
+        new_decis += _new_decis
         embedding_results += _embedding_results
         embedding_conditions += _embedding_conditions
         count_ptr += len(_embedding_results)
         count_Ptr_results.append(count_ptr)
 
-        _embedding_results, _embedding_conditions = GflowNetEmbedding.e_cuda_bind.embedding_cudabind(
-            insts, decisions)
+        _embedding_results, _embedding_conditions, _new_insts, _new_decis = \
+            GflowNetEmbedding.e_cuda_bind.embedding_cudabind(insts, decisions)
+        new_insts += _new_insts
+        new_decis += _new_decis
         embedding_results += _embedding_results
         embedding_conditions += _embedding_conditions
         count_ptr += len(_embedding_results)
         count_Ptr_results.append(count_ptr)
 
-        _embedding_results, _embedding_conditions = GflowNetEmbedding.e_sample_perfectile.embedding_sample_perfectile(
-            insts, decisions)
+        _embedding_results, _embedding_conditions, _new_insts, _new_decis = \
+            GflowNetEmbedding.e_sample_perfectile.embedding_sample_perfectile(
+                insts, decisions)
+        new_insts += _new_insts
+        new_decis += _new_decis
         embedding_results += _embedding_results
         embedding_conditions += _embedding_conditions
         count_ptr += len(_embedding_results)
         count_Ptr_results.append(count_ptr)
+        # convert two list into dict
+        new_decisions = dict(zip(new_insts, new_decis))
         # condition is input for constraints of GFlowNet, also for decoding (include prim type)
         # result is binary vector: 15*10 (15 is annotation+cuda number, 10 is sample result index range [0, 9]) + 15*96
         # (15 is sample perfect tile number, 96 is 质因数分解 number)
         # TODO: input condition into GFlowNet as mask
-        return embedding_results, embedding_conditions, count_Ptr_results
+        return embedding_results, embedding_conditions, count_Ptr_results, new_decisions
 
     @staticmethod
     def unembedding(insts, decisions, embedding_results, embedding_conditions, count_Ptr_results) -> Tuple[List[Instruction], Dict[Instruction, int]]:
 
         previous_count_ptr = 0
-        type_list = [GflowNetEmbedding.e_annotation.unembedding_annotation, GflowNetEmbedding.e_cuda_bind.unembedding_cudabind,
+        type_list = [GflowNetEmbedding.e_annotation.unembedding_annotation, 
+                     GflowNetEmbedding.e_cuda_bind.unembedding_cudabind,
                      GflowNetEmbedding.e_sample_perfectile.unembedding_sample_perfectile]
         # new_insts = []
         # new_decisions = []
-        # NOTE: modify original decision!!! 
-        if isinstance(decisions, map):
-            decisions = dict(decisions)
-            
+        # NOTE: modify original decision!!!
+
+        new_decisions = dict(decisions)
+
         for v, i in enumerate(count_Ptr_results):
             _embedding_results = embedding_results[previous_count_ptr:i]
             _embedding_conditions = embedding_conditions[previous_count_ptr:i]
             previous_count_ptr = i
-            decisions = type_list[v](
-                insts, decisions, _embedding_results, _embedding_conditions)
+            new_decisions = type_list[v](
+                insts, new_decisions, _embedding_results, _embedding_conditions)
             # new_insts += _new_insts
             # new_decisions += _new_decisions
-
-        return list(decisions.keys()), list(decisions.values())
+        return new_decisions
+        # return list(decisions.keys()), list(decisions.values())
 
     def __call__(self, insts, decisions, if_embedding, **kwargs):
         """

@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     from src.gfn.utils.edm_model import mlp_ebm
     # define states len & action len
-    state_len = 15 * 1 + 15 * 96
-    action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
+    state_len = 15 * 1 + 15 * 32
+    action_len = 15 * 10 + 15 * 32 * 10 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
     tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
 
@@ -60,8 +60,8 @@ if __name__ == "__main__":
     # cost_model = edm_model
     # TODO: input TLP in energy, but we need align format
     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
-    # alpha \in [1, 500]
-    env = MetaScheduleEnv(energy=cost_model, alpha=120, device_str=device)
+    # alpha \in [1, 100]
+    env = MetaScheduleEnv(energy=cost_model, alpha=10, device_str=device)
 
     # 2 - We define the needed modules (neural networks)
     # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     import os
     import sys
     mount_path = "/root"
-    root = os.path.join(mount_path, "share/dataset/gflownet_dataset0")
+    root = os.path.join(mount_path, "share/dataset/decode_info")
 
     # ValueError: Object arrays cannot be loaded when allow_pickle=False
     # save np.load
@@ -119,10 +119,10 @@ if __name__ == "__main__":
     # modify the default parameters of np.load
     np.load = lambda *a, **k: np_load_old(*a, allow_pickle=True, **k)
 
-    database_path = "/root/share/dataset/tlp_dataset0"
+    database_path = "/root/share/dataset/decode_info"
 
-    info_path = "/root/share/dataset/0sample_info"
-    gfn_path = "/root/kongdehao/model/gfn"
+    info_path = "/root/share/dataset/decode_info"
+    gfn_path = "/root/kongdehao/model/gfn/backward_gfn"
     # bs = 512
     bs = 16
     dataloader, data_num = gflownet_data_load(
@@ -137,19 +137,19 @@ if __name__ == "__main__":
     x0, workload_paths0, candidate_paths0, decode0, order0, cond0, ptr0, score0 = next(
         train_iter0)
     # epoch = 5000
-    epoch = 5000
+    epoch = 500
     target = "cuda"
-
-    # wandb_project = "train forward paradigm MetaSchedule Env with TLP"
-    # use_wandb = len(wandb_project) > 0
-    # if use_wandb:
-    #     wandb.init(project=wandb_project)
-    #     wandb.config.update({
-    #         "learning_rate": 1e-3,
-    #         "architecture": "EBM GFlowNet",
-    #         "dataset": "GFlowNet Dataset",
-    #         "epochs": epoch,
-    #     })
+    if not __debug__:
+        wandb_project = "train forward paradigm MetaSchedule Env with TLP"
+        use_wandb = len(wandb_project) > 0
+        if use_wandb:
+            wandb.init(project=wandb_project)
+            wandb.config.update({
+                "learning_rate": 1e-3,
+                "architecture": "EBM GFlowNet",
+                "dataset": "GFlowNet Dataset",
+                "epochs": epoch,
+            })
 
     pbar = tqdm(range(0, epoch))
     pre_f = None
@@ -184,6 +184,30 @@ if __name__ == "__main__":
             # create env state
             states = env.States(x)
 
+            # for i in range(decode0.shape[0]):
+
+            #     workload_path, candidate_path = workload_paths0[i], candidate_paths0[i]
+            #     # NOTE: cost 1ms -- not return database, otherwise records is empty list
+            #     database = ms.database.JSONDatabase(path_workload=workload_path,
+            #                                 path_tuning_record=candidate_path)
+            #     records = database.get_all_tuning_records()
+            #     record = records[0]
+            #     candidate = record.as_measure_candidate()
+            #     # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
+            #     # NOTE: cost 10ms
+            #     context = TuneContext(mod=record.workload.mod, target=Target(target))
+
+            #     sub_sch = candidate.sch
+            #     # trace include instructions & decisions
+            #     sub_trace = sub_sch.trace
+            #     # instructions include deterministic and stochastic
+            #     sub_insts = sub_trace.insts
+            #     # decision only include stochastic instructions
+            #     sub_decisions = sub_trace.decisions
+            #     print(f"old decision = {list(sub_decisions.values())}")
+            #     cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode0[0]
+            #     print(f"{cond_x0, cond_y0, cond_x1, cond_y1}")
+
             num = len(workload_paths)
             databases_path = [(workload_paths[i], candidate_paths[i])
                               for i in range(num)]
@@ -203,34 +227,51 @@ if __name__ == "__main__":
             # NOTE: step 1 -- sample trajectory
             f_trajectories = f_sampler.sample_trajectories(
                 env=env, n_trajectories=16, info=f_info)
-            
+            # print(
+            #     f"Sample forward trajectory! reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
             b_trajectories = b_sampler.sample_trajectories(
                 env=env, n_trajectories=16, states=states, info=b_info)
 
+            # real_y = edm_model(x.float())
+
+            # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
+            # fake_y = edm_model(fake_x)
+            # edm_loss = ((real_y - score) ** 2).mean()
             optimizer.zero_grad()
             # cost model real work place
             # NOTE: step 2 -- compute loss
-            f_loss = gfn.loss(env, f_trajectories)
-            b_loss = gfn.loss(env, b_trajectories)
+            f_loss, f_pf_loss, f_pb_loss, f_logR, f_logZ = gfn.loss(
+                env, f_trajectories)
+            b_loss, b_pf_loss, b_pb_loss, b_logR, b_logZ = gfn.loss(
+                env, b_trajectories)
 
             # TODO: remove edm_loss
-            loss = f_loss + b_loss #
+            loss = f_loss + b_loss
             loss.backward()
             optimizer.step()
 
             if ep % 1 == 0:
-                reward = torch.exp(f_trajectories.log_rewards).mean().item()
+                reward = torch.exp(f_trajectories.log_rewards).mean()
                 pbar.set_postfix(
-                    {"f_loss": f_loss.item(), "b_loss": b_loss.item(), "reward": reward})
-                # # log metrics to wandb
-                # wandb.log({"res[0]": f_trajectories.res[0], "res[1]": f_trajectories.res[1],
-                #            "res[2]": f_trajectories.res[2], "f_loss": f_loss.item(), 
-                #             "b_loss": b_loss.item(), "reward": reward})
+                    {"f_loss": f_loss.item(), "reward": reward.item(), "f_pf_loss": f_pf_loss.item(),
+                     "f_pb_loss": f_pb_loss.item(), "f_logR": f_logR.item(), "f_logZ": f_logZ.item(),
+                     "b_pf_loss": b_pf_loss.item(), "b_pb_loss": b_pb_loss.item(),
+                     "b_logR": b_logR.item(), "b_logZ": b_logZ.item()})
+                if not __debug__:
+                    # log metrics to wandb
+                    wandb.log({"res[0]": f_trajectories.res[0], "res[1]": f_trajectories.res[1],
+                               "res[2]": f_trajectories.res[2], "res[3]": f_trajectories.res[3],
+                               "f_loss": f_loss.item(), "reward": reward.item(), "f_pf_loss": f_pf_loss.item(),
+                               "f_pb_loss": f_pb_loss.item(), "f_logR": f_logR.item(), "f_logZ": f_logZ.item(),
+                               "b_pf_loss": b_pf_loss.item(), "b_pb_loss": b_pb_loss.item(),
+                               "b_logR": b_logR.item(), "b_logZ": b_logZ.item()})
             if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
-                dir = os.path.join(gfn_path, f"gflownet_{ep}.pth")
+                if not os.path.exists(gfn_path):
+                    os.makedirs(gfn_path)
+                dir = os.path.join(gfn_path, f"backward_gflownet_{ep}.pth")
                 last_dir = os.path.join(
-                    gfn_path, f"gflownet_{ep-50}.pth")
+                    gfn_path, f"backward_gflownet_{ep-50}.pth")
                 torch.save(gfn, dir)
                 os.system(f"rm -rf {last_dir}")
 

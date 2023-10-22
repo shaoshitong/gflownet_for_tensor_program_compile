@@ -60,6 +60,8 @@ class EmbeddingAnnotation:
 
     @staticmethod
     def embedding_annotation(insts, decisions) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        new_insts = []
+        new_decis = []
         embedding_results = []
         embedding_conditions = []
         annotations = set()
@@ -98,6 +100,8 @@ class EmbeddingAnnotation:
                         values += [0]
                     condition = [0, 0, 0] + [old_len] + \
                         probs + values  # fix len: first 3 is id
+                    new_insts.append(str(sub_inst))
+                    new_decis.append(int(sub_value))
                     embedding_conditions.append(np.array(condition))
                     embedding_results.append(one_hot)
 
@@ -123,10 +127,12 @@ class EmbeddingAnnotation:
                 condition = [0, 1, 0] + [old_len] + probs + values
             else:
                 raise NotImplementedError
+            new_insts.append(str(sample_categorical))
+            new_decis.append(int(decisions[sample_categorical]))
             embedding_conditions.append(np.array(condition))
             embedding_results.append(one_hot)
         # res: one-hot, condition:
-        return embedding_results, embedding_conditions
+        return embedding_results, embedding_conditions, new_insts, new_decis
 
     @staticmethod
     def unembedding_annotation(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
@@ -160,10 +166,10 @@ class EmbeddingAnnotation:
                 if sub_inst.outputs[0] in annotations:
                     embedding_result = embedding_results[count_ptr]
                     # 判断变量是否为ndarray
-                    if isinstance(embedding_result, np.ndarray):
-                        new_value = np.argmax(embedding_result)
+                    if len(embedding_result.shape) > 0:
+                        new_value = int(np.argmax(embedding_result))
                     else:
-                        new_value = embedding_result
+                        new_value = int(embedding_result)
                     new_value = tvm.tir.const(new_value, dtype='int32')
                     # new_insts.append(sub_inst)
                     new_decisions[sub_inst] = new_value
@@ -174,10 +180,10 @@ class EmbeddingAnnotation:
             var_rv = ann_inst.inputs[1]
             sample_categorical = sample_insts[var_rv]
             embedding_result = embedding_results[count_ptr]
-            if isinstance(embedding_result, np.ndarray):
-                new_value = np.argmax(embedding_result)
+            if len(embedding_result.shape) > 0:
+                new_value = int(np.argmax(embedding_result))
             else:
-                new_value = embedding_result
+                new_value = int(embedding_result)
 
             new_value = tvm.tir.const(new_value, dtype='int32')
             # new_insts.append(sample_categorical)

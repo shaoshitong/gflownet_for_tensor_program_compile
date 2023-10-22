@@ -77,6 +77,7 @@ class EmbeddingCUDABind:
 
     @staticmethod
     def embedding_cudabind(insts, decisions) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        new_insts, new_decis = [], []
         embedding_results = []
         embedding_conditions = []
 
@@ -122,11 +123,12 @@ class EmbeddingCUDABind:
             while len(values) < EmbeddingCUDABind.embedding_len:
                 values += [0]
             condition = [0, 0, 1] + [old_len] + probs + values
-
+            new_insts.append(str(sample_inst))
+            new_decis.append(int(decisions[sample_inst]))
             embedding_conditions.append(np.array(condition))
             embedding_results.append(one_hot)
 
-        return embedding_results, embedding_conditions
+        return embedding_results, embedding_conditions, new_insts, new_decis
 
     @staticmethod
     def unembedding_cudabind(insts, decisions, embedding_results, embedding_conditions) -> Tuple[List[Instruction], Dict[Instruction, int]]:
@@ -167,10 +169,10 @@ class EmbeddingCUDABind:
 
             one_hot = embedding_results[count_ptr]
             count_ptr += 1
-            if isinstance(one_hot, np.ndarray):
-                new_value = np.argmax(one_hot)
+            if len(one_hot.shape) > 0:
+                new_value = int(np.argmax(one_hot))
             else:
-                new_value = one_hot
+                new_value = int(one_hot)
             new_value = tvm.tir.const(new_value, dtype='int32')
             # new_insts.append(sample_inst)
             new_decisions[sample_inst] = new_value

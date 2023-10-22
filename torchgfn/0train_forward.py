@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     from src.gfn.utils.edm_model import mlp_ebm
     # define states len & action len
-    state_len = 15 * 1 + 15 * 96
-    action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
+    state_len = 15 * 1 + 15 * 32
+    action_len = 15 * 10 + 15 * 32 * 10 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
     tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
 
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     # TODO: input TLP in energy, but we need align format
     # Decode result x into tvm, input it into TLP -- torchgfn/mlc_dataset/dataset_embedding/gflownet_embedding.py
     # alpha \in [1, 100]
-    env = MetaScheduleEnv(energy=cost_model, alpha=50, device_str=device)
+    env = MetaScheduleEnv(energy=cost_model, alpha=10, device_str=device)
 
     # 2 - We define the needed modules (neural networks)
     # The environment has a preprocessor attribute, which is used to preprocess the state before feeding it to the policy estimator
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     import os
     import sys
     mount_path = "/root"
-    root = os.path.join(mount_path, "share/dataset/gflownet_dataset0")
+    root = os.path.join(mount_path, "share/dataset/decode_info")
 
     # ValueError: Object arrays cannot be loaded when allow_pickle=False
     # save np.load
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     # modify the default parameters of np.load
     np.load = lambda *a, **k: np_load_old(*a, allow_pickle=True, **k)
 
-    database_path = "/root/share/dataset/tlp_dataset0"
+    database_path = "/root/share/dataset/decode_info"
 
     info_path = "/root/share/dataset/decode_info"
     gfn_path = "/root/kongdehao/model/gfn"
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # epoch = 5000
     epoch = 500
     target = "cuda"
-
+    # if not __debug__:
     wandb_project = "train forward paradigm MetaSchedule Env with TLP"
     use_wandb = len(wandb_project) > 0
     if use_wandb:
@@ -245,7 +245,8 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             # cost model real work place
             # NOTE: step 2 -- compute loss
-            f_loss = gfn.loss(env, f_trajectories)
+            f_loss, pf_loss, pb_loss, logR, logZ = gfn.loss(
+                env, f_trajectories)
             # b_loss = gfn.loss(env, b_trajectories)
             # print(
             #     f"After loss, forward reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
@@ -257,15 +258,16 @@ if __name__ == "__main__":
             optimizer.step()
 
             if ep % 1 == 0:
-                reward = torch.exp(f_trajectories.log_rewards).mean().item()
+                reward = torch.exp(f_trajectories.log_rewards).mean()
                 pbar.set_postfix(
-                    {"f_loss": f_loss.item(), "reward": reward})
+                    {"f_loss": f_loss.item(), "reward": reward.item(), "pf_loss": pf_loss.item(),
+                     "pb_loss": pb_loss.item(), "logR": logR.item(), "logZ": logZ.item()})
+                # if not __debug__:
                 # log metrics to wandb
                 wandb.log({"res[0]": f_trajectories.res[0], "res[1]": f_trajectories.res[1],
                            "res[2]": f_trajectories.res[2], "res[3]": f_trajectories.res[3],
-                           "res[4]": f_trajectories.res[4], "res[5]": f_trajectories.res[5],
-                           "res[6]": f_trajectories.res[6], "res[7]": f_trajectories.res[7],
-                           "f_loss": f_loss.item(), "reward": reward})
+                           "f_loss": f_loss.item(), "reward": reward.item(), "pf_loss": pf_loss.item(),
+                           "pb_loss": pb_loss.item(), "logR": logR.item(), "logZ": logZ.item()})
             if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
                 dir = os.path.join(gfn_path, f"forward_gflownet_{ep}.pth")
