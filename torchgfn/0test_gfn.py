@@ -26,23 +26,12 @@ import pickle
 from tvm.meta_schedule.cost_model.tlp_cost_model_train import *
 
 
-# NOTE: score is runtime, val is variance, tau is temperature factor
-def normalize_score(score,
-                    _mean=0.003680646535107316,
-                    _val=0.0012118761480652196,
-                    _min=2.8831801089918256e-06,
-                    _max=4.567233072666666,
-                    _tau=1):
-    score = (score - _mean) / (_val ** (1/2))
-    return torch.log(torch.sigmoid(score / _tau))
-
-
 if __name__ == "__main__":
 
     from src.gfn.utils.edm_model import mlp_ebm
-    # define states len & action len
-    state_len = 15 * 1 + 15 * 96
-    action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
+    # # define states len & action len
+    # state_len = 15 * 1 + 15 * 96
+    # action_len = 15 * 10 + 15 * 96 * 2 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
     tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
 
@@ -111,7 +100,7 @@ if __name__ == "__main__":
     import os
     import sys
     mount_path = "/root"
-    root = os.path.join(mount_path, "share/dataset/gflownet_dataset0")
+    root = os.path.join(mount_path, "share/dataset/decode_info")
 
     # ValueError: Object arrays cannot be loaded when allow_pickle=False
     # save np.load
@@ -119,10 +108,10 @@ if __name__ == "__main__":
     # modify the default parameters of np.load
     np.load = lambda *a, **k: np_load_old(*a, allow_pickle=True, **k)
 
-    database_path = "/root/share/dataset/tlp_dataset0"
+    database_path = "/root/share/dataset/decode_info"
 
-    info_path = "/root/share/dataset/0sample_info"
-    gfn_path = "/root/kongdehao/model/gfn/forward_gflownet_1480.pth"
+    info_path = "/root/share/dataset/decode_info"
+    gfn_path = "/root/kongdehao/model/gfn/forward_gfn/tlp_median_home14_gfn_310.pth"
     # bs = 512
     bs = 16
     # dataloader, data_num = gflownet_data_load(
@@ -145,303 +134,254 @@ if __name__ == "__main__":
     f_info = (databases_path0, decode0, order0, cond0, ptr0, target)
 
     gfn = torch.load(gfn_path, map_location=device)
-    traj = gfn.sample_trajectories(env=env, n_samples=16, info=f_info)
-    xs = traj.states[-2]
-    xs = xs.tensor
 
-    import torch.nn.functional as Fun
-    MAX_NUMBER = 15
-    # (bs, ...)
-    databases_path, decodes, orders, conds, ptrs, target = f_info
-    bs = xs.shape[0]
-    contexts, candidates = [], []
-    # print("len of xs", len(xs))
-    # TODO:.. print(len)
-    old_decision = []
-    new_decision = []
-    old_time = []
-    new_time = []
-    old_ans = 0
-    new_ans = 0
+    # import wandb
+    # wandb_project = "Test GFlowNet performance with hardware"
+    # use_wandb = len(wandb_project) > 0
+    # if use_wandb:
+    #     wandb.init(project=wandb_project)
+    #     wandb.config.update({
+    #         "learning_rate": 1e-3,
+    #         "architecture": "EBM GFlowNet",
+    #         "dataset": "GFlowNet Dataset",
+    #     })
 
-    for i in range(bs):
-        x, database_path, decode, order, cond, ptr = \
-            xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
+    def commit_candidate(env, f_info):
+        traj = gfn.sample_trajectories(env=env, n_samples=16, info=f_info)
+        xs = traj.states[-2]
+        xs = xs.tensor
+        databases_path, decodes, orders, conds, ptrs, target = f_info
+        MAX_N = 15
+        ROW = 32
+        COL = 10
+        bs = xs.shape[0]
+        # TODO:.. print(len)
+        old_decision = []
+        new_decision = []
 
-        cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
-        ex_emb0, ex_emb1 = torch.split(x, [MAX_NUMBER, MAX_NUMBER*96], 0)
-        ex_cond0, ex_cond1 = torch.split(
-            cond, split_size_or_sections=MAX_NUMBER, dim=0)
+        for i in range(bs):
+            x, database_path, decode, order, cond, ptr = \
+                xs[i], databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
 
-        ex_emb1 = ex_emb1.view(MAX_NUMBER, -1)
-        # convert into one-hot format
-        ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
+            cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode
+            ex_emb0, ex_emb1 = torch.split(x, [MAX_N, MAX_N*ROW], 0)
+            ex_cond0, ex_cond1 = torch.split(
+                cond, split_size_or_sections=MAX_N, dim=0)
 
-        emb0_x = emb0_x.item()
-        emb1_x = emb1_x.item()
+            ex_emb1 = ex_emb1.view(MAX_N, -1)
+            # # convert into one-hot format
+            # ex_emb0 = torch.eye(10)[ex_emb0.to(torch.int64)]
+            # ex_emb1 = torch.eye(10)[ex_emb1.to(torch.int64)]
 
-        emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_NUMBER-emb0_x], 0)
-        emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_NUMBER-emb1_x], 0)
+            emb0_x = emb0_x.item()
+            emb1_x = emb1_x.item()
 
-        cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_NUMBER-cond_x0], 0)
-        cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_NUMBER-cond_x1], 0)
+            emb0, _ = torch.split(ex_emb0, [emb0_x, MAX_N-emb0_x], 0)
+            emb1, _ = torch.split(ex_emb1, [emb1_x, MAX_N-emb1_x], 0)
 
-        cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
-        cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
-        # convert cuda:0 device into cpu
-        emb0 = emb0.cpu()
-        emb1 = emb1.cpu()
-        cond0 = cond0.cpu()
-        cond1 = cond1.cpu()
+            cond0, _ = torch.split(ex_cond0, [cond_x0, MAX_N-cond_x0], 0)
+            cond1, _ = torch.split(ex_cond1, [cond_x1, MAX_N-cond_x1], 0)
 
-        res = []
-        emb_conds = []
-        p0 = 0  # emb0 position
-        p1 = 0  # emb1
-        for i in range(max_len):
-            if order[i] == 0:
-                res.append(emb0[p0].numpy())
-                emb_conds.append(cond0[p0].numpy())
-                p0 += 1
+            cond0, _ = torch.split(cond0, [cond_y0, 34-cond_y0], 1)
+            cond1, _ = torch.split(cond1, [cond_y1, 34-cond_y1], 1)
+            # convert cuda:0 device into cpu
+            emb0 = emb0.cpu()
+            emb1 = emb1.cpu()
+            cond0 = cond0.cpu()
+            cond1 = cond1.cpu()
+            # print(f"emb0 = {emb0}")
+            # print(f"emb1 = {emb1}")
+            res = []
+            emb_conds = []
+            p0 = 0  # emb0 position
+            p1 = 0  # emb1
+            for i in range(max_len):
+                if order[i] == 0:
+                    res.append(emb0[p0].numpy())
+                    emb_conds.append(cond0[p0].numpy())
+                    p0 += 1
+                else:
+                    res.append(emb1[p1].numpy())
+                    emb_conds.append(cond1[p1].numpy())
+                    p1 += 1
+
+            if isinstance(ptr, np.ndarray):
+                ptr = ptr.astype(int)
+                ptr = ptr.tolist()
             else:
-                res.append(emb1[p1].numpy())
-                emb_conds.append(cond1[p1].numpy())
-                p1 += 1
+                ptr = ptr.int()
+                ptr = ptr.tolist()
 
-        if isinstance(ptr, np.ndarray):
-            ptr = ptr.astype(int)
-            ptr = ptr.tolist()
-        else:
-            ptr = ptr.int()
-            ptr = ptr.tolist()
+            workload_path, candidate_path = database_path
 
-        workload_path, candidate_path = database_path
-        # NOTE: cost 1ms -- not return database, otherwise records is empty list
-        database = ms.database.JSONDatabase(path_workload=workload_path,
-                                            path_tuning_record=candidate_path)
+            # NOTE: cost 1ms -- not return database, otherwise records is empty list
+            database = ms.database.JSONDatabase(path_workload=workload_path,
+                                                path_tuning_record=candidate_path)
 
-        records = database.get_all_tuning_records()
-        record = records[0]
-        candidate = record.as_measure_candidate()
-        # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
-        # NOTE: cost 10ms
-        context = TuneContext(mod=record.workload.mod, target=Target(target))
+            records = database.get_all_tuning_records()
+            record = records[0]
 
-        sub_sch = candidate.sch
-        # trace include instructions & decisions
-        sub_trace = sub_sch.trace
-        # instructions include deterministic and stochastic
-        sub_insts = sub_trace.insts
-        # decision only include stochastic instructions
-        sub_decisions = sub_trace.decisions
-        old_sch = candidate.sch
-        # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
-        lib = tvm.build(old_sch.mod, target="cuda")
-        # lib = tvm.build(sch.mod, target=target)
-        a_nd = tvm.nd.array(np.random.uniform(
-            size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
-        b_nd = tvm.nd.array(np.random.uniform(
-            size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
+            candidate = record.as_measure_candidate()
 
-        f_timer_after = lib.time_evaluator("main", tvm.cuda())
-        # print(f"{record.workload.mod}")
-        tmp = f_timer_after(a_nd, b_nd).mean * 1000
-        old_time.append(tmp)
-        old_ans += tmp
-        print("Time cost of MyModule before tuning: %f ms" % (tmp))
+            sub_sch = candidate.sch
+            # trace include instructions & decisions
+            sub_trace = sub_sch.trace
+            # instructions include deterministic and stochastic
+            sub_insts = sub_trace.insts
+            # decision only include stochastic instructions
+            sub_decisions = sub_trace.decisions
 
-        # print(f"after record = {record}, candidate = {candidate}, decision = ")
-        gm = GflowNetEmbedding()
-        new_sub_insts, new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
-                                              embedding_conditions=emb_conds, count_Ptr_results=ptr)
+            from tvm.ir.container import Array
+            from tvm.tir.expr import IntImm
 
-        # NOTE: new decision is null list -- gm must pass valid insts & decisions
-        # print(f"new decision = {new_sub_decisions}")
+            def custom_sort(item):
+                value = item[1]
+                if isinstance(value, Array):
+                    val = [int(v.value) for v in value]
+                    return sum(val)  # 对列表值求和作为排序关键字
+                else:
+                    return int(value)
+            # NOTE: MUST sorted for fixed position!!!
+            sub_decisions = sorted(
+                dict(sub_decisions).items(), key=custom_sort)
+            sub_decisions = {k: v for k, v in sub_decisions}
 
-        # Must use with_decision() to set sub_trace
-        for new_sub_inst, new_sub_decision in zip(new_sub_insts, new_sub_decisions):
-            # new_sub_decision = tvm.tir.const(1, dtype='int32')
-            # NOTE: bug1 must assign to sub_trace
-            sub_trace = sub_trace.with_decision(
-                new_sub_inst, new_sub_decision, True)
-        nn = len(list(sub_trace.decisions.values()))
-        # if nn > 2:
-        #     print(f"Encounter new condition in {candidate_path}!")
-        #     print(f"old decision = {list(sub_decisions.values())}")
-        #     print(f"new decisions = {new_sub_decisions}")
-        #     # print(f"res = {res}")
-        old_decision.append(list(sub_decisions.values()))
-        new_decision.append(new_sub_decisions)
+            # print(f"old decision = {list(sub_decisions.values())}")
+            # print(f"res = {res}")
 
-        from tvm.meta_schedule.database.database import TuningRecord
+            gm = GflowNetEmbedding()
+            new_sub_decisions = gm(sub_insts, sub_decisions, False, embedding_results=res,
+                                   embedding_conditions=emb_conds, count_Ptr_results=ptr)
 
-        new_database = database
-        new_database.commit_workload(record.workload.mod)
-        new_database.commit_tuning_record(TuningRecord(
-            sub_trace,
-            record.workload,
-            record.run_secs,
-            Target(target),
-            candidate.args_info))
+            # NOTE: new decision is null list -- gm must pass valid insts & decisions
+            # print(f"new decision = {new_sub_decisions}")
 
-        records = new_database.get_all_tuning_records()
-        # print("records shape = ", len(records))
-        # NOTE: commit add new candidates in json
-        record = records[-1]
-        # NOTE: n=3, but decision=4
-        candidate = record.as_measure_candidate()
-        sch = candidate.sch
-        context = TuneContext(mod=record.workload.mod, target=Target(target))
-        # TODO: check same context
-        # if len(contexts) > 0:
-        #     if context != contexts[-1]:
-        #         print("diff context")
+            # Must use with_decision() to set sub_trace
+            for new_sub_inst, new_sub_decision in new_sub_decisions.items():
+                # new_sub_decision = tvm.tir.const(1, dtype='int32')
+                # NOTE: bug1 must assign to sub_trace
+                sub_trace = sub_trace.with_decision(
+                    new_sub_inst, new_sub_decision, True)
+            nn = len(list(sub_trace.decisions.values()))
 
-        # check correctness for
-        # print(f"final candidate decision = {list(sub_decisions.values())}")
-        contexts.append(context)
-        candidates.append(candidate)
+            old_decision.append(list(sub_decisions.values()))
+            new_decision.append(list(new_sub_decisions.values()))
+            print(f"old decision = {list(sub_decisions.values())}")
+            print(f"new decision = {list(new_sub_decisions.values())}")
 
-        # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
-        lib = tvm.build(sch.mod, target="cuda")
-        # lib = tvm.build(sch.mod, target=target)
-        a_nd = tvm.nd.array(np.random.uniform(
-            size=(1, 64, 768)).astype("float32"), device=tvm.cuda())
-        b_nd = tvm.nd.array(np.random.uniform(
-            size=(1, 64, 1)).astype("float32"), device=tvm.cuda())
-        c_nd = tvm.nd.empty((128, 128), "float32", device=tvm.cuda())
-        f_timer_after = lib.time_evaluator("main", tvm.cuda())
-        # print(f"{record.workload.mod}")
-        new_time.append(tmp)
-        tmp = f_timer_after(a_nd, b_nd).mean * 1000
-        new_ans += tmp
-        print("Time cost of MyModule after tuning: %f ms" % (tmp))
+            from tvm.meta_schedule.database.database import TuningRecord
 
-    print(f"old times = {old_time}")
-    print(f"new times = {new_time}")
-    print(f"old mean time = {old_ans*1.0/bs} ms")
-    print(f"new mean time = {new_ans*1.0/bs} ms")
-    print(f"Finish")
-    # for ep in (pbar):
-    #     cond = None
-    #     ptr = None
-    #     # record, decode, order, last_embedding, run_secs, last_condition, last_ptr_list
-    #     # for step, (decode, order, x, score, cond, ptr) in enumerate(train_iter):
-    #     if True:
-    #         step = ep
-    #         try:
-    #             x, workload_paths, candidate_paths, decode, order, cond, ptr, score = next(
-    #                 train_iter)
-    #         except:
-    #             train_iter = iter(dataloader)
-    #             x, workload_paths, candidate_paths, decode, order, cond, ptr, score = next(
-    #                 train_iter)
+            new_database = database
+            new_database.commit_workload(record.workload.mod)
+            new_database.commit_tuning_record(TuningRecord(
+                sub_trace,
+                record.workload,
+                record.run_secs,
+                Target(target),
+                candidate.args_info))
 
-    #         # data_num: 3191
-    #         begin = (step*bs) % data_num
-    #         end = (step*bs+bs) % data_num
+            records = new_database.get_all_tuning_records()
 
-    #         x = x.cuda(non_blocking=True).long()
-    #         # Convert into [batch, -1]
-    #         x = x.view(x.shape[0], -1)
+    def run_lib(bs, f_info):
+        databases_path, decodes, orders, conds, ptrs, target = f_info
 
-    #         score = normalize_score(score.cuda(non_blocking=True))
-    #         if torch.all(x == 0):
-    #             print("x is all zeros")
-    #         # create env state
-    #         states = env.States(x)
+        old_time = []
+        new_time = []
+        old_ans = 0
+        new_ans = 0
+        for i in range(bs):
 
-    #         # for i in range(decode0.shape[0]):
+            database_path, decode, order, cond, ptr = \
+                databases_path[i], decodes[i], orders[i], conds[i], ptrs[i]
 
-    #         #     workload_path, candidate_path = workload_paths0[i], candidate_paths0[i]
-    #         #     # NOTE: cost 1ms -- not return database, otherwise records is empty list
-    #         #     database = ms.database.JSONDatabase(path_workload=workload_path,
-    #         #                                 path_tuning_record=candidate_path)
-    #         #     records = database.get_all_tuning_records()
-    #         #     record = records[0]
-    #         #     candidate = record.as_measure_candidate()
-    #         #     # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
-    #         #     # NOTE: cost 10ms
-    #         #     context = TuneContext(mod=record.workload.mod, target=Target(target))
+            workload_path, candidate_path = database_path
+            # NOTE: cost 1ms -- not return database, otherwise records is empty list
+            database = ms.database.JSONDatabase(path_workload=workload_path,
+                                                path_tuning_record=candidate_path)
 
-    #         #     sub_sch = candidate.sch
-    #         #     # trace include instructions & decisions
-    #         #     sub_trace = sub_sch.trace
-    #         #     # instructions include deterministic and stochastic
-    #         #     sub_insts = sub_trace.insts
-    #         #     # decision only include stochastic instructions
-    #         #     sub_decisions = sub_trace.decisions
-    #         #     print(f"old decision = {list(sub_decisions.values())}")
-    #         #     cond_x0, cond_y0, cond_x1, cond_y1, max_len, emb0_x, emb1_x = decode0[0]
-    #         #     print(f"{cond_x0, cond_y0, cond_x1, cond_y1}")
+            records = database.get_all_tuning_records()
+            record = records[0]
+            candidate = record.as_measure_candidate()
+            # results = RunnerResult(run_secs=record.run_secs, error_msg=None)
 
-    #         num = len(workload_paths)
-    #         databases_path = [(workload_paths[i], candidate_paths[i])
-    #                           for i in range(num)]
+            sub_sch = candidate.sch
+            # trace include instructions & decisions
+            sub_trace = sub_sch.trace
+            # instructions include deterministic and stochastic
+            sub_insts = sub_trace.insts
+            # decision only include stochastic instructions
+            sub_decisions = sub_trace.decisions
+            print(f"old decision = {list(sub_decisions.values())}")
 
-    #         num0 = len(workload_paths)
-    #         databases_path0 = [(workload_paths0[i], candidate_paths0[i])
-    #                            for i in range(num0)]
-    #         f_info = (databases_path0, decode0, order0, cond0, ptr0, target)
-    #         b_info = (databases_path, decode, order, cond, ptr, target)
+            old_sch = candidate.sch
+            a_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 256)).astype("float32"), device=tvm.cuda())
+            b_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 64)).astype("float32"), device=tvm.cuda())
 
-    #         # # NOTE: for test restore_embedding
-    #         # info00 = (x0, databases_path0, decode0,
-    #         #           order0, cond0, ptr0, target)
-    #         # features = restore_embedding(info00)
-    #         # print(f"Successful from {step} to {step+bs}!")
+            c_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 64)).astype("float32"), device=tvm.cuda())
 
-    #         # NOTE: step 1 -- sample trajectory
-    #         f_trajectories = f_sampler.sample_trajectories(
-    #             env=env, n_trajectories=16, info=f_info)
-    #         # print(
-    #         #     f"Sample forward trajectory! reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
-    #         # b_trajectories = b_sampler.sample_trajectories(
-    #         #     env=env, n_trajectories=16, states=states, info=b_info)
-    #         # print(
-    #         #     f"Sample backward trajectory! reward = {torch.exp(b_trajectories.log_rewards).mean().item()}")
+            # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
+            print("********************")
+            print(old_sch.mod)
+            lib = tvm.build(old_sch.mod, target="cuda")
+            # print(lib.get_source())
+            # lib = tvm.build(sch.mod, target=target)
 
-    #         # pre_f = f_trajectories.features
-    #         # pre_b = b_trajectories.features
-    #         # TODO: real_y that for training fake cost model -- discriminator
-    #         # real_y = edm_model(x.float())
+            f_timer_after = lib.time_evaluator("main", tvm.cuda())
+            # print(f"{record.workload.mod}")
+            tmp = f_timer_after(a_nd, b_nd, c_nd).mean * 1000
 
-    #         # fake_x = f_trajectories.states.tensor[-2,...].clone().detach().float()
-    #         # fake_y = edm_model(fake_x)
-    #         # edm_loss = ((real_y - score) ** 2).mean()
-    #         optimizer.zero_grad()
-    #         # cost model real work place
-    #         # NOTE: step 2 -- compute loss
-    #         f_loss = gfn.loss(env, f_trajectories)
-    #         # b_loss = gfn.loss(env, b_trajectories)
-    #         # print(
-    #         #     f"After loss, forward reward = {torch.exp(f_trajectories.log_rewards).mean().item()}")
-    #         # print(
-    #         #     f"After loss, backward reward = {torch.exp(b_trajectories.log_rewards).mean().item()}")
-    #         # TODO: remove edm_loss
-    #         loss = f_loss  # b_loss + edm_loss
-    #         loss.backward()
-    #         optimizer.step()
+            old_time.append(tmp)
+            old_ans += tmp
+            print("Time cost of MyModule before tuning: %f ms" % (tmp))
 
-    #         if ep % 1 == 0:
-    #             reward = torch.exp(f_trajectories.log_rewards).mean().item()
-    #             pbar.set_postfix(
-    #                 {"f_loss": f_loss.item(), "reward": reward})
-    #             # # log metrics to wandb
-    #             # wandb.log({"res[0]": f_trajectories.res[0], "res[1]": f_trajectories.res[1],
-    #             #            "res[2]": f_trajectories.res[2], "f_loss": f_loss.item(), "reward": reward})
-    #         if ep % 5 == 0:
-    #             # checkpoint = {"gfn": gfn.state_dict()}
-    #             dir = os.path.join(gfn_path, f"forward_gflownet_{ep}.pth")
-    #             last_dir = os.path.join(
-    #                 gfn_path, f"forward_gflownet_{ep-20}.pth")
-    #             torch.save(gfn, dir)
-    #             os.system(f"rm -rf {last_dir}")
+            # NOTE: commit add new candidates in json
+            record = records[-1]
+            # NOTE: n=3, but decision=4
+            candidate = record.as_measure_candidate()
+            sch = candidate.sch
 
-    #     # save_model_path = "%s/tlp_model_%d.pkl" % (args.save_model_path, epoch)
-    #     # with open(save_model_path, 'wb') as f:
-    #     #     pickle.dump(net.cpu(), f)
-    #     # net.to(device)
+            # trace include instructions & decisions
+            trace = sch.trace
+            # instructions include deterministic and stochastic
+            insts = trace.insts
+            # decision only include stochastic instructions
+            decisions = trace.decisions
+            print(f"new decision = {list(decisions.values())}")
+
+            a_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 256)).astype("float32"), device=tvm.cuda())
+            b_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 64)).astype("float32"), device=tvm.cuda())
+
+            c_nd = tvm.nd.array(np.random.uniform(
+                size=(16, 256, 64)).astype("float32"), device=tvm.cuda())
+
+            # NOTE: Double Bug, must add target = "cuda", target = target. NOT (sch.mod, target)
+            print("~~~~~~~~~~~~~~~~~~~~~~")
+            print(sch.mod)
+            lib = tvm.build(sch.mod, target="cuda")
+
+            f_timer_after = lib.time_evaluator("main", tvm.cuda())
+            # print(f"{record.workload.mod}")
+            new_time.append(tmp)
+            tmp = f_timer_after(a_nd, b_nd, c_nd).mean * 1000
+            # wandb.log({"new candidate Time": tmp})
+            new_ans += tmp
+            print("Time cost of MyModule after tuning: %f ms" % (tmp))
+
+        print(f"old times = {old_time}")
+        print(f"new times = {new_time}")
+        print(f"old mean time = {old_ans*1.0/bs} ms")
+        print(f"new mean time = {new_ans*1.0/bs} ms")
+        # wandb.log({"old mean candidate Time": old_ans*1.0/bs})
+        # wandb.log({"new mean candidate Time": new_ans*1.0/bs})
+        print(f"Finish")
+
+    # commit_candidate(env, f_info)
+    run_lib(bs, f_info)
 
     # restore np.load for future normal usage
     np.load = np_load_old

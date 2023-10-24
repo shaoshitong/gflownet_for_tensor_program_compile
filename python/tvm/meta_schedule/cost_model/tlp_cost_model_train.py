@@ -338,15 +338,32 @@ class TransformerModule(torch.nn.Module):
         return output.squeeze()
 
 
-def validate(model, valid_loader, loss_func, device):
+def validate(model, valid_loader, loss_func, device, name=""):
+    # import wandb
+    # wandb_project = "Validate TLP with hardware"
+    # use_wandb = len(wandb_project) > 0
+    # if use_wandb:
+    #     wandb.init(project=wandb_project)
+    #     wandb.config.update({
+    #         "architecture": "TLP Cost Model",
+    #         "dataset": "Dataset of Extract Features",
+
+    #     })
     model.eval()
     valid_losses = []
 
     for batch_data, batch_label in valid_loader:
         batch_data = batch_data.to(device)
         batch_label = batch_label.to(device)
-
-        valid_loss = loss_func(model(batch_data), batch_label)
+        preds = model(batch_data)
+        labels = batch_label
+        valid_loss = loss_func(preds, labels)
+        # cc = 0
+        # for pred, label in zip(preds, labels):
+        #     cc += 1
+        #     if cc > 100:
+        #         break
+        #     # wandb.log({f"{name} prediction": pred, f"{name} label": label})
         valid_losses.append(valid_loss.item())
 
     return np.sum(valid_losses)/len(valid_loader)
@@ -388,11 +405,16 @@ def load_data(logger, datasets_all):
     val_feature = list(
         itertools_chain.from_iterable([g.features for g in val_data])
     )
+    # # compute scores
+    # train_label = np.concatenate(
+    #     [g.min_cost / np.array(g.costs) for g in train_data])
+    # val_label = np.concatenate(
+    #     [g.min_cost / np.array(g.costs) for g in val_data])
     # compute scores
     train_label = np.concatenate(
-        [g.min_cost / np.array(g.costs) for g in train_data])
+        [np.array(g.costs) for g in train_data])
     val_label = np.concatenate(
-        [g.min_cost / np.array(g.costs) for g in val_data])
+        [np.array(g.costs) for g in val_data])
 
     logger.info("train_data length is %d", len(train_feature))
     logger.info("val_data length is %d", len(val_feature))
@@ -407,6 +429,102 @@ def load_data(logger, datasets_all):
     return train_dataloader, val_dataloader
 
 
+def eval(logger, datasets_all):
+
+    val_feature = list(
+        itertools_chain.from_iterable([g.features for g in datasets_all])
+    )
+
+    val_label = np.concatenate(
+        [np.array(g.costs) for g in datasets_all])
+
+    logger.info("val_data length is %d", len(val_feature))
+
+    n_gpu = torch.cuda.device_count()
+
+    valid_loader = SegmentDataLoader(
+        val_feature, val_label, args.train_size_per_gpu * n_gpu, False
+    )
+
+    device = "cuda"
+    loss_func = LambdaRankLoss(device)
+    tlp_median_w_95_path = "/root/kongdehao/model/0test_tlp/tlp_median_w_95.pth"
+    tlp_median_w_95 = torch.load(tlp_median_w_95_path, map_location=device)
+    tlp_median_w_95.to(device)
+
+    tlp_v2_mean_72_path = "/root/kongdehao/model/0test_tlp/tlp_v2_mean_72.pth"
+    tlp_v2_mean_72 = torch.load(tlp_v2_mean_72_path, map_location=device)
+    tlp_v2_mean_72.to(device)
+
+    tlp_v2_median_w_58_path = "/root/kongdehao/model/0test_tlp/tlp_v2_median_w_58.pth"
+    tlp_v2_median_w_58 = torch.load(
+        tlp_v2_median_w_58_path, map_location=device)
+    tlp_v2_median_w_58.to(device)
+
+    tlp_mean_88_path = "/root/kongdehao/model/0test_tlp/tlp_mean_88.pth"
+    tlp_mean_88 = torch.load(tlp_mean_88_path, map_location=device)
+    tlp_mean_88.to(device)
+
+    tlp_median_home_14_path = "/root/kongdehao/model/tlp/median/tlp_median_home_14.pth"
+
+    tlp_median_home_14 = torch.load(
+        tlp_median_home_14_path, map_location=device)
+    tlp_median_home_14.to(device)
+
+    tlp_median_14_path = "/root/kongdehao/model/tlp/median/tlp_median_14.pth"
+    tlp_median_14 = torch.load(tlp_median_14_path, map_location=device)
+    tlp_median_14.to(device)
+
+    tlp_median_home0_13_path = "/root/kongdehao/model/tlp/median/tlp_median_home0_13.pth"
+    tlp_median_home0_13 = torch.load(
+        tlp_median_home0_13_path, map_location=device)
+    tlp_median_home0_13.to(device)
+
+    tlp_old_14_path = "/root/kongdehao/model/median_tlp/save_model_v1/tlp_model_14.pkl"
+    with open(tlp_old_14_path, 'rb') as f:
+        tlp_old_14 = pickle.load(f)
+    tlp_old_14.to(device)
+    # Modify the device_ids
+    tlp_old_14.device_ids = [0, 1, 2, 3, 4, 5, 6, 7]
+    # Modify the src_device_obj
+    tlp_old_14.src_device_obj = torch.device('cuda:0')
+    # Modify the output_device
+    tlp_old_14.output_device = torch.device('cuda:0')
+    loss = {}
+    tlp_median_w_95_loss = validate(
+        tlp_median_w_95, valid_loader, loss_func, device, "tlp_median_w_95")
+    tlp_v2_mean_72_loss = validate(
+        tlp_v2_mean_72, valid_loader, loss_func, device, "tlp_v2_mean_72")
+    tlp_v2_median_w_58_loss = validate(
+        tlp_v2_median_w_58, valid_loader, loss_func, device, "tlp_v2_median_w_58")
+    tlp_mean_88_loss = validate(
+        tlp_mean_88, valid_loader, loss_func, device, "tlp_mean_88")
+
+    tlp_median_home_14_loss = validate(
+        tlp_median_home_14, valid_loader, loss_func, device, "tlp_median_home_14")
+    tlp_median_14_loss = validate(
+        tlp_median_14, valid_loader, loss_func, device, "tlp_median_14")
+    tlp_median_home0_13_loss = validate(
+        tlp_median_home0_13, valid_loader, loss_func, device, "tlp_median_home0_13")
+    tlp_old_14_loss = validate(
+        tlp_old_14, valid_loader, loss_func, device, "tlp_old_14")
+    loss["tlp_median_w_95_loss"] = tlp_median_w_95_loss
+    loss["tlp_v2_mean_72_loss"] = tlp_v2_mean_72_loss
+    loss["tlp_v2_median_w_58_loss"] = tlp_v2_median_w_58_loss
+    loss["tlp_mean_88_loss"] = tlp_mean_88_loss
+    loss["tlp_median_home_14_loss"] = tlp_median_home_14_loss
+    loss["tlp_median_14_loss"] = tlp_median_14_loss
+    loss["tlp_median_home0_13_loss"] = tlp_median_home0_13_loss
+    loss["tlp_old_14_loss"] = tlp_old_14_loss
+    # loss = dict(sorted(loss))
+
+    save_path = "/root/kongdehao/model/0test_tlp/0records_dataset_loss.md"
+    with open(save_path, "a") as f:
+        f.write("extract_features_median")
+        for key, val in loss.items():
+            f.write(f"{key} = {val}\n")
+
+
 def train(train_loader, val_dataloader, device, logger):
     import wandb
 
@@ -415,6 +533,8 @@ def train(train_loader, val_dataloader, device, logger):
     net = torch.nn.DataParallel(net, device_ids=[0, 1, 2, 3, 4, 5, 6, 7])
 
     loss_func = LambdaRankLoss(device)
+    # NOTE:
+    # loss_func = nn.MSELoss()
 
     n_epoch = args.n_epoch
     optimizer = torch.optim.Adam(
@@ -422,7 +542,7 @@ def train(train_loader, val_dataloader, device, logger):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=n_epoch // 3, gamma=1)
 
-    wandb_project = "train TLP Cost Model"
+    wandb_project = "train TLP Cost Model with Rank loss"
     use_wandb = len(wandb_project) > 0
     if use_wandb:
         wandb.init(project=wandb_project)
@@ -472,7 +592,7 @@ def train(train_loader, val_dataloader, device, logger):
             min_loss = valid_loss
 
     # checkpoint = {"tlp" : best_net.state_dict()}
-    torch.save(best_net, "%s/tlp_min_%d.pth" %
+    torch.save(best_net, "%s/tlp_median_w_%d.pth" %
                (args.save_model_path, best_it))
     # with open(save_model_path, 'wb') as f:
     #     pickle.dump(best_net.cpu(), f)
@@ -499,7 +619,7 @@ if __name__ == "__main__":
     parser.add_argument("--cuda", type=str, default='cuda:0')
     # NOTE: Use you defined dataset path
     parser.add_argument("--dataset_path", type=str,
-                        default='/root/share/dataset/0test_extract_features/extract_features_min')
+                        default='/root/share/dataset/0test_extract_features/extract_features_median')
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--optimizer", type=str, default='default')
@@ -507,8 +627,8 @@ if __name__ == "__main__":
     parser.add_argument("--step_size", type=int, default=25)
     parser.add_argument("--data_cnt", type=int, default=-1)  # data_cnt * 1000
 
-    parser.add_argument("--train_size_per_gpu", type=int, default=512)
-    parser.add_argument("--val_size_per_gpu", type=int, default=512)
+    parser.add_argument("--train_size_per_gpu", type=int, default=256)
+    parser.add_argument("--val_size_per_gpu", type=int, default=256)
     parser.add_argument("--n_epoch", type=int, default=200)
     parser.add_argument("--target", type=str, default="nvidia/nvidia-a100")
     parser.add_argument("--save_model_path", type=str,
@@ -523,5 +643,7 @@ if __name__ == "__main__":
         os.mkdir(args.save_model_path)
 
     datasets = from_json(path=args.dataset_path)
-    train_loader, val_loader = load_data(logger, datasets)
-    train(train_loader, val_loader, device=args.cuda, logger=logger)
+    # train_loader, val_loader = load_data(logger, datasets)
+    # eval(val_loader)
+    eval(logger, datasets)
+    # train(train_loader, val_loader, device=args.cuda, logger=logger)

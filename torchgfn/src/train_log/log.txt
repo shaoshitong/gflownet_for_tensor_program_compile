@@ -1,1 +1,2 @@
-Namespace(attention_head=8, cuda='cuda:0', data_cnt=-1, dataset_path='/root/share/dataset/0test_extract_features/extract_features_min', lr=0.0001, n_epoch=200, optimizer='default', save_model_path='/root/kongdehao/model/0test_tlp', step_size=25, target='nvidia/nvidia-a100', train_size_per_gpu=512, val_size_per_gpu=512, weight_decay=1e-06)
+Namespace(attention_head=8, cuda='cuda:0', data_cnt=-1, dataset_path='/root/share/dataset/0test_extract_features/extract_features_median', lr=0.0001, n_epoch=200, optimizer='default', save_model_path='/root/kongdehao/model/0test_tlp', step_size=25, target='nvidia/nvidia-a100', train_size_per_gpu=256, val_size_per_gpu=256, weight_decay=1e-06)
+val_data length is 70740

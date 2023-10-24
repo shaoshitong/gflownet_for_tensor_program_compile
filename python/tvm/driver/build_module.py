@@ -127,7 +127,11 @@ def lower(
        The result IRModule
     """
     if isinstance(inp, IRModule):
-        return ffi.lower_module(inp, simple_mode)
+        tmp = ffi.lower_module(inp, simple_mode)
+        print("@@@@@@@@@@@@@ ")
+        print(tmp)
+        return tmp
+        # return ffi.lower_module(inp, simple_mode)
     if isinstance(inp, PrimFunc):
         return ffi.lower_primfunc(inp, name, simple_mode)
     if isinstance(inp, te.Schedule):
@@ -253,9 +257,11 @@ def build(
     annotated_mods = {}
     for tar, mod in target_input_mod.items():
         if not isinstance(tar, (str, Target)):
-            raise ValueError("The key of inputs must be str or " "Target when inputs is dict.")
+            raise ValueError(
+                "The key of inputs must be str or " "Target when inputs is dict.")
         if not isinstance(mod, tvm.IRModule):
-            raise ValueError("inputs must be Schedule, IRModule," "or dict of str to IRModule.")
+            raise ValueError(
+                "inputs must be Schedule, IRModule," "or dict of str to IRModule.")
         annotated_mods[tar] = mod.with_attr("runtime", runtime)
 
     # TODO(mbs): Both CompilationConfig and TIRToRuntime implement the same host target
@@ -266,7 +272,8 @@ def build(
             "Please pass in tvm.target.Target(target, host=target_host) instead."
         )
 
-    annotated_mods, target_host = Target.canon_target_map_and_host(annotated_mods, target_host)
+    annotated_mods, target_host = Target.canon_target_map_and_host(
+        annotated_mods, target_host)
     if not target_host:
         for tar, mod in annotated_mods.items():
             device_type = ndarray.device(tar.kind.name, 0).device_type
@@ -276,11 +283,13 @@ def build(
     if not target_host:
         target_host = "llvm" if tvm.runtime.enabled("llvm") else "stackvm"
 
-    annotated_mods, target_host = Target.canon_target_map_and_host(annotated_mods, target_host)
+    annotated_mods, target_host = Target.canon_target_map_and_host(
+        annotated_mods, target_host)
 
     rt_mod_host = _driver_ffi.tir_to_runtime(annotated_mods, target_host)
 
-    annotated_mods, target_host = Target.canon_target_map_and_host(annotated_mods, target_host)
+    annotated_mods, target_host = Target.canon_target_map_and_host(
+        annotated_mods, target_host)
 
     if not isinstance(target_host, Target):
         target_host = Target(target_host)
@@ -290,12 +299,14 @@ def build(
             create_csource_crt_metadata_module = tvm._ffi.get_global_func(
                 "runtime.CreateCSourceCrtMetadataModule"
             )
-            to_return = create_csource_crt_metadata_module([rt_mod_host], target_host, runtime)
+            to_return = create_csource_crt_metadata_module(
+                [rt_mod_host], target_host, runtime)
         elif target_host.kind.name == "llvm":
             create_llvm_crt_metadata_module = tvm._ffi.get_global_func(
                 "runtime.CreateLLVMCrtMetadataModule"
             )
-            to_return = create_llvm_crt_metadata_module([rt_mod_host], target_host, runtime)
+            to_return = create_llvm_crt_metadata_module(
+                [rt_mod_host], target_host, runtime)
     else:
         to_return = rt_mod_host
 

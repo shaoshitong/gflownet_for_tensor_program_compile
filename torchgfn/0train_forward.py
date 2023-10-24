@@ -44,7 +44,7 @@ if __name__ == "__main__":
     state_len = 15 * 1 + 15 * 32
     action_len = 15 * 10 + 15 * 32 * 10 + 1  # add the terminal state
     # 1 - We define the environment and Energy Function
-    tlp_path = "/root/kongdehao/model/0test_tlp/tlp_median_14.pth"
+    tlp_path = "/root/kongdehao/model/0test_tlp/tlp_v2_mean_72.pth"
 
     device = "cuda"
     # with open(tlp_path, 'rb') as f:
@@ -270,9 +270,9 @@ if __name__ == "__main__":
                            "pb_loss": pb_loss.item(), "logR": logR.item(), "logZ": logZ.item()})
             if ep % 5 == 0:
                 # checkpoint = {"gfn": gfn.state_dict()}
-                dir = os.path.join(gfn_path, f"forward_gflownet_{ep}.pth")
+                dir = os.path.join(gfn_path, f"tlp_v2_mean_72_gfn_{ep}.pth")
                 last_dir = os.path.join(
-                    gfn_path, f"forward_gflownet_{ep-50}.pth")
+                    gfn_path, f"tlp_v2_mean_72_gfn_{ep-50}.pth")
                 torch.save(gfn, dir)
                 os.system(f"rm -rf {last_dir}")
 

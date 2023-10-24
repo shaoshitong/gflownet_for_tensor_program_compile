@@ -398,6 +398,7 @@ class SegmentDataLoader:
         min_latency = []
         for data_idx, data in enumerate(dataset):
             data = data[:3]
+            # correspond to (step_vecs, score, min_cost)
             datas_step, label, min_lat = data
             datas_steps.append(datas_step)
             labels.append(label)

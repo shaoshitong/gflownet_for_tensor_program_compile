@@ -83,7 +83,7 @@ class tlpCostModel(PyCostModel):
         # NOTE: update relative path to tlp model
 
     # def load(self, path: str = "/root/kongdehao/model/tlp/median/tlp_median_19.pth") -> None:
-    def load(self, path: str = "/root/kongdehao/model/tlp/median/tlp_median_home0_13.pth") -> None:
+    def load(self, path: str = "/root/kongdehao/model/0test_tlp/tlp_old_14.pth") -> None:
         self.model = torch.load(path, map_location=self.device)
         # with open(path, 'rb') as f:
         #     self.model = pickle.load(f)

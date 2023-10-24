@@ -521,9 +521,9 @@ class MetaScheduleEnv(DiscreteEnv):
         # print(f"res = {res}")
         print(
             f"In log_reward() reward = {-self.alpha * res.clone().detach().view(-1)}")
-        # return -self.alpha * res.clone().detach().view(-1), res
-        # NOTE: TLP 和hardware time 正好相反！！！，将res反向
-        return self.alpha * res.clone().detach().view(-1), -res
+        return -self.alpha * res.clone().detach().view(-1), res
+        # NOTE: TLP 和hardware time 正好相反！！！，将res反向, 结果非常差！！！
+        # return self.alpha * res.clone().detach().view(-1), -res
 
     # def get_states_indices(self, states: DiscreteStates) -> TT["batch_shape"]:
     #     """The chosen encoding is the following: -1 -> 0, 0 -> 1, 1 -> 2, then we convert to base 3"""

@@ -113,22 +113,23 @@ def extract_features(
     #     score = (score - _mean) / (_val ** (1/2))
     #     return torch.log(torch.sigmoid(score / _tau))
 
-    def _mean_cost(res: RunnerResult) -> float:
+    def _mean_cost(res: RunnerResult, min_cost) -> float:
         if not res.run_secs:
             return 1e10
-        # NOTE: convert into min()
-        return float(np.median([float(s) for s in res.run_secs]))
+        cur = float(np.mean([float(s) for s in res.run_secs]))
+        # NOTE: convert into min_cost/cur
+        return min_cost/cur
         # return float(np.min([float(s) for s in res.run_secs]))
-
-    # def _mean_cost(res: RunnerResult) -> float:
-    #     if not res.run_secs:
-    #         return 1e10
-    #     return float(np.median([float(s) for s in res.run_secs]))
 
     new_features = [_feature(x)
                     for x in extractor.extract_from(context, candidates)]
+    min_cost = 1e8
+    for res in results:
+        cur = float(np.mean([float(s) for s in res.run_secs]))
+        min_cost = min(min_cost, cur)
+
     new_mean_costs = (
-        np.array([_mean_cost(x) for x in results]).astype("float32")
+        np.array([_mean_cost(x, min_cost) for x in results]).astype("float32")
         if results is not None
         else None
     )
@@ -225,7 +226,7 @@ if __name__ == "__main__":
     parse.add_argument("--dataset_path", type=str,
                        default='/root/share/dataset/measure_candidate')
     parse.add_argument("--save_folder", type=str,
-                       default='/root/share/dataset/0test_extract_features/extract_features_min')
+                       default='/root/share/dataset/0test_extract_features/extract_features_mean')
     parse.add_argument("--target", type=str, default='cuda')
 
     args = parse.parse_args()
